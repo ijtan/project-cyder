@@ -18,9 +18,13 @@ configure dashboard pages, usage display preferences, or cameras.
 1. In HACS, add `ijtan/project-cyder` as a custom repository with the
    **Integration** category.
 2. Download Project Cyder and restart Home Assistant.
-3. Add **Project Cyder** in **Settings > Devices & services** and select the
-   ESPHome display.
-4. Open the integration options and add alert rules.
+
+After installation, use this button to start setup in Home Assistant:
+
+[![Add Project Cyder to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start?domain=cyd_ha_monitor)
+
+You can also add **Project Cyder** from **Settings > Devices & services**.
+Select the ESPHome display, then open the integration options to add alert rules.
 
 Each rule selects a numeric entity, direction, threshold, hysteresis, priority,
 title, and message. Threshold comparisons are strict. An active rule clears
