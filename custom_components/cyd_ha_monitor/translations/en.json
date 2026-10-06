@@ -81,7 +81,6 @@
     },
     "dashboard_action_unavailable": {
       "title": "Dashboard updates are unavailable for {device_name}",
-      "description": "The selected ESPHome device does not expose the update_dashboard action. Install the updated CYD firmware, then reload Project Cyder.",
       "fix_flow": {
         "step": {
           "init": {
