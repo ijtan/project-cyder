@@ -23,9 +23,16 @@ alert call have not yet been verified.
 
 ## Install
 
-1. In HACS, add `ijtan/project-cyder` as a custom repository with the
+1. Install and set up [HACS](https://www.hacs.xyz/docs/use/) if it is not
+   already installed.
+2. Open Project Cyder in HACS with this button:
+
+[![Open Project Cyder in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ijtan&repository=project-cyder&category=integration)
+
+   This link opens the custom repository in HACS, so you do not need to add it
+   manually first. If adding it manually, use `ijtan/project-cyder` and the
    **Integration** category.
-2. Download Project Cyder and restart Home Assistant.
+3. Download Project Cyder in HACS and restart Home Assistant.
 
 After installation, use this button to start setup in Home Assistant:
 
