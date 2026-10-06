@@ -10,8 +10,16 @@ the selected display through its ESPHome actions.
 - An ESPHome display exposing the `display_alert`, `clear_alert`, and
   `dismiss_alert` actions.
 
-This integration configures alerts only. It does not install firmware or
-configure dashboard pages, usage display preferences, or cameras.
+This integration configures alerts only. This repository does not include
+ESPHome YAML or install firmware. Dashboard pages, usage display preferences,
+and cameras are not configurable here.
+
+## Current release
+
+Version 0.1.0 lets you select an ESPHome display and configure numeric-entity
+threshold alerts in Home Assistant. It sends Notice, Warning, and Critical
+alerts through the display's ESPHome actions. A live Home Assistant setup and
+alert call have not yet been verified.
 
 ## Install
 
@@ -36,6 +44,13 @@ rule wins ties.
 Alerts sent by Project Cyder cannot be dismissed on the display. The firmware
 does not report touchscreen dismissals to Home Assistant, so alerts remain
 active until their rules clear.
+
+## Roadmap
+
+- Configure dashboard entities and used/remaining and reset presentation from
+  Home Assistant.
+- Add camera selection, starting with snapshots.
+- Verify screen rendering and touch behavior on the CYD, then add screenshots.
 
 Report bugs at <https://github.com/ijtan/project-cyder/issues>.
 
