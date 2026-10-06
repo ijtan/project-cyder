@@ -1,0 +1,39 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  tests:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - run: python -m unittest discover -s tests -v
+      - run: python -m compileall -q custom_components tests
+      - name: Validate metadata
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          manifest = json.loads(Path("custom_components/cyd_ha_monitor/manifest.json").read_text())
+          hacs = json.loads(Path("hacs.json").read_text())
+          strings = json.loads(Path("custom_components/cyd_ha_monitor/strings.json").read_text())
+          translation = json.loads(Path("custom_components/cyd_ha_monitor/translations/en.json").read_text())
+
+          required = {"domain", "name", "codeowners", "config_flow", "documentation", "integration_type", "issue_tracker", "iot_class", "version"}
+          assert required <= manifest.keys()
+          assert hacs["name"] == manifest["name"] == "Project Cyder"
+          assert strings == translation
+          PY

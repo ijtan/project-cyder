@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.venv/
+.env
+.env.*
+secrets.yaml
+secrets*.yaml
+*.log
+.coverage
+coverage.xml
+.DS_Store
+Thumbs.db

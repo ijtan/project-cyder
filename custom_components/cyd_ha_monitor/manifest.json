@@ -1,0 +1,12 @@
+{
+  "domain": "cyd_ha_monitor",
+  "name": "Project Cyder",
+  "codeowners": ["@ijtan"],
+  "config_flow": true,
+  "dependencies": ["esphome"],
+  "documentation": "https://github.com/ijtan/project-cyder",
+  "integration_type": "service",
+  "issue_tracker": "https://github.com/ijtan/project-cyder/issues",
+  "iot_class": "local_push",
+  "version": "0.1.0"
+}

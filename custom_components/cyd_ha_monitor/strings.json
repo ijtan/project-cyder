@@ -1,0 +1,63 @@
+{
+  "config": {
+    "step": {
+      "user": {
+          "title": "Project Cyder",
+        "description": "Select the ESPHome CYD device whose alert actions should be used.",
+        "data": {
+          "device_id": "ESPHome device"
+        }
+      },
+      "reconfigure": {
+        "title": "Reconfigure CYD device",
+        "description": "After installing firmware with the alert actions, select the ESPHome device again and reload this entry.",
+        "data": {
+          "device_id": "ESPHome device"
+        }
+      }
+    },
+    "error": {
+      "invalid_rules": "One or more alert rules are invalid. Check their entity, threshold, priority, title, and message."
+    },
+    "abort": {
+      "already_configured": "This ESPHome device is already configured.",
+      "wrong_device": "This entry must remain linked to its originally selected ESPHome device. Remove and re-add the integration to monitor a different device.",
+      "reconfigure_successful": "The device selection was reloaded."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Alert rules",
+        "description": "Add any number of threshold rules. Above/below comparisons are strict; hysteresis controls when an active rule clears.",
+        "data": {
+          "rules": "Threshold alert rules"
+        }
+      }
+    }
+  },
+  "issues": {
+    "actions_unavailable": {
+      "title": "ESPHome alert actions unavailable for {device_name}",
+      "description": "This integration needs the device-prefixed display_alert, clear_alert, and dismiss_alert services from ESPHome. Check that this entry selects the correct ESPHome device, install/enable firmware exposing all three actions, then reload or reconfigure this integration entry. Threshold alerts are non-dismissible so HA remains the source of truth."
+    }
+  },
+  "repairs": {
+    "issue": {
+      "actions_unavailable": {
+        "step": {
+          "init": {
+            "title": "Reconfigure the CYD ESPHome device",
+            "description": "First install/enable the firmware actions display_alert, clear_alert, and dismiss_alert in ESPHome. Continue to select the device again; the integration will verify its registered action services when it reloads.",
+            "data": {},
+            "submit": "Continue"
+          }
+        },
+        "abort": {
+          "reconfigure": "Device reconfiguration started.",
+          "entry_not_found": "The Project Cyder entry no longer exists."
+        }
+      }
+    }
+  }
+}
