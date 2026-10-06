@@ -28,12 +28,37 @@
   "options": {
     "step": {
       "init": {
+        "title": "Project Cyder settings",
+        "menu_options": {
+          "dashboard": "Dashboard and usage",
+          "alerts": "Alert rules"
+        }
+      },
+      "dashboard": {
+        "title": "Dashboard and usage",
+        "description": "Choose the power and energy sensors shown on the display. Power is converted to kW for the main value and graph, and to W for the optional metrics. Claude usage sensors keep their configured units.",
+        "data": {
+          "main_power_entity": "Main power sensor",
+          "daily_energy_entity": "Energy used today sensor",
+          "power_metrics": "Additional power metrics",
+          "claude_session_entity": "Claude session usage percent",
+          "claude_week_entity": "Claude weekly usage percent",
+          "claude_extra_used_entity": "Claude extra usage used",
+          "claude_extra_limit_entity": "Claude extra usage limit",
+          "claude_extra_percent_entity": "Claude extra usage percent",
+          "claude_extra_mode": "Show extra usage as"
+        }
+      },
+      "alerts": {
         "title": "Alert rules",
-        "description": "Add any number of threshold rules. Above/below comparisons are strict; hysteresis controls when an active rule clears.",
+        "description": "Add threshold rules. Comparisons are strict; hysteresis controls when an active rule clears.",
         "data": {
           "rules": "Threshold alert rules"
         }
       }
+    },
+    "error": {
+      "invalid_dashboard": "Check the selected entities and display names. Up to four named power metrics are supported."
     }
   },
   "issues": {
@@ -44,6 +69,24 @@
           "init": {
             "title": "Reconfigure the CYD ESPHome device",
             "description": "This integration needs the device-prefixed display_alert, clear_alert, and dismiss_alert services. Check that this entry selects the correct ESPHome device, install firmware exposing all three actions, then continue to verify the registered services.",
+            "data": {},
+            "submit": "Continue"
+          }
+        },
+        "abort": {
+          "reconfigure": "Device reconfiguration started.",
+          "entry_not_found": "The Project Cyder entry no longer exists."
+        }
+      }
+    },
+    "dashboard_action_unavailable": {
+      "title": "Dashboard updates are unavailable for {device_name}",
+      "description": "The selected ESPHome device does not expose the update_dashboard action. Install the updated CYD firmware, then reload Project Cyder.",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Reload the CYD integration",
+            "description": "After installing firmware with the update_dashboard action, continue to reload the selected ESPHome device.",
             "data": {},
             "submit": "Continue"
           }

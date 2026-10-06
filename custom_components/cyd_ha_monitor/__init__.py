@@ -1,4 +1,4 @@
-"""Project Cyder: Home Assistant alerts sent through ESPHome actions."""
+"""Project Cyder: dashboard updates and priority alerts for ESPHome CYDs."""
 
 from __future__ import annotations
 
@@ -8,12 +8,15 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from .alerts import AlertCommand, RuleEngine
+from .dashboard import dashboard_action_data, dashboard_entities, validate_dashboard
 from .const import (
     CONF_DEVICE_ID,
+    CONF_DASHBOARD_SETTINGS_SAVED,
     CONF_RULES,
     DOMAIN,
     ESPHOME_DOMAIN,
     ISSUE_ACTIONS_UNAVAILABLE,
+    ISSUE_DASHBOARD_ACTION_UNAVAILABLE,
 )
 from .service_map import ActionServices, async_get_device_action_services
 
@@ -33,6 +36,10 @@ class Runtime:
     device_name: str
     current_command: AlertCommand | None = None
     transition_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
+    dashboard_options: dict[str, Any] = field(default_factory=dict)
+    dashboard_entities: set[str] = field(default_factory=set)
+    dashboard_settings_saved: bool = False
+    dashboard_update_scheduled: bool = False
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -68,21 +75,60 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     rules = entry.options.get(CONF_RULES, [])
     engine = RuleEngine(rules)
-    runtime = Runtime(engine, action_services, device_name)
+    try:
+        dashboard_options = validate_dashboard(entry.options)
+    except (TypeError, ValueError):
+        _LOGGER.exception("Invalid dashboard settings for %s", entry.title)
+        dashboard_options = validate_dashboard({})
+    selected_dashboard_entities = dashboard_entities(dashboard_options)
+    dashboard_issue_id = f"{ISSUE_DASHBOARD_ACTION_UNAVAILABLE}_{entry.entry_id}"
+    if selected_dashboard_entities and action_services.update_dashboard is None:
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            dashboard_issue_id,
+            data={"entry_id": entry.entry_id},
+            is_fixable=True,
+            is_persistent=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_DASHBOARD_ACTION_UNAVAILABLE,
+            translation_placeholders={"device_name": entry.title},
+        )
+        _LOGGER.warning(
+            "Dashboard sensors are configured for %s, but its ESPHome firmware "
+            "does not expose the update_dashboard action. Update the CYD firmware "
+            "and reload this integration entry.",
+            entry.title,
+        )
+    else:
+        ir.async_delete_issue(hass, DOMAIN, dashboard_issue_id)
+
+    runtime = Runtime(
+        engine,
+        action_services,
+        device_name,
+        dashboard_options=dashboard_options,
+        dashboard_entities=selected_dashboard_entities,
+        dashboard_settings_saved=entry.options.get(
+            CONF_DASHBOARD_SETTINGS_SAVED, False
+        ),
+    )
     hass.data.setdefault(DOMAIN, {})[entry.entry_id] = runtime
     entry.async_on_unload(entry.add_update_listener(_async_options_updated))
 
-    tracked_entities = engine.entities
+    tracked_entities = engine.entities | selected_dashboard_entities
 
     @callback
     def state_changed(event: Event) -> None:
+        entity_id = event.data["entity_id"]
         new_state = event.data.get("new_state")
-        if new_state is None:
-            return
-        changed, current = engine.update(event.data["entity_id"], new_state.state)
-        if changed:
-            _schedule_transition(hass, runtime, runtime.current_command, current)
-            runtime.current_command = current
+        if new_state is not None and entity_id in engine.entities:
+            changed, current = engine.update(entity_id, new_state.state)
+            if changed:
+                _schedule_transition(hass, runtime, runtime.current_command, current)
+                runtime.current_command = current
+        if entity_id in selected_dashboard_entities:
+            _schedule_dashboard_update(hass, runtime)
 
     if tracked_entities:
         unsubscribe = async_track_state_change_event(
@@ -99,6 +145,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if initial is not None:
         _schedule_transition(hass, runtime, None, initial)
         runtime.current_command = initial
+    if (
+        runtime.dashboard_settings_saved or selected_dashboard_entities
+    ) and action_services.update_dashboard is not None:
+        _schedule_dashboard_update(hass, runtime)
 
     return True
 
@@ -131,6 +181,39 @@ def _schedule_transition(
 ) -> None:
     """Queue clear/replace calls without blocking HA's event listener."""
     hass.async_create_task(_async_send_transition(hass, runtime, previous, current))
+
+
+def _schedule_dashboard_update(hass: HomeAssistant, runtime: Runtime) -> None:
+    """Coalesce rapid sensor changes into one latest-state display update."""
+    if (
+        runtime.dashboard_update_scheduled
+        or runtime.service_names.update_dashboard is None
+    ):
+        return
+    runtime.dashboard_update_scheduled = True
+    hass.async_create_task(_async_send_dashboard_update(hass, runtime))
+
+
+async def _async_send_dashboard_update(hass: HomeAssistant, runtime: Runtime) -> None:
+    """Push a formatted snapshot of the configured dashboard sensors."""
+    service = runtime.service_names.update_dashboard
+    if service is None:
+        return
+    async with runtime.transition_lock:
+        runtime.dashboard_update_scheduled = False
+        try:
+            await hass.services.async_call(
+                ESPHOME_DOMAIN,
+                service,
+                dashboard_action_data(hass, runtime.dashboard_options),
+            )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            _LOGGER.exception(
+                "Could not update dashboard metrics on ESPHome device %s",
+                runtime.device_name,
+            )
 
 
 async def _async_send_transition(

@@ -17,18 +17,32 @@ from homeassistant.helpers import selector
 
 from .alerts import validate_rules
 from .const import (
+    CONF_CLAUDE_EXTRA_LIMIT_ENTITY,
+    CONF_CLAUDE_EXTRA_MODE,
+    CONF_CLAUDE_EXTRA_PERCENT_ENTITY,
+    CONF_CLAUDE_EXTRA_USED_ENTITY,
+    CONF_CLAUDE_SESSION_ENTITY,
+    CONF_CLAUDE_WEEK_ENTITY,
+    CONF_DAILY_ENERGY_ENTITY,
+    CONF_DASHBOARD_SETTINGS_SAVED,
     CONF_DEVICE_ID,
     CONF_DIRECTION,
     CONF_ENTITY_ID,
     CONF_HYSTERESIS,
+    CONF_MAIN_POWER_ENTITY,
     CONF_MESSAGE,
+    CONF_METRIC_ENTITY_ID,
+    CONF_METRIC_NAME,
     CONF_PRIORITY,
+    CONF_POWER_METRICS,
     CONF_RULES,
     CONF_THRESHOLD,
     CONF_TITLE,
     DOMAIN,
     ISSUE_ACTIONS_UNAVAILABLE,
+    ISSUE_DASHBOARD_ACTION_UNAVAILABLE,
 )
+from .dashboard import validate_dashboard
 
 
 def _device_selector() -> selector.DeviceSelector:
@@ -142,6 +156,11 @@ class CydHAMonitorConfigFlow(ConfigFlow, domain=DOMAIN):
                 DOMAIN,
                 f"{ISSUE_ACTIONS_UNAVAILABLE}_{entry.entry_id}",
             )
+            ir.async_delete_issue(
+                self.hass,
+                DOMAIN,
+                f"{ISSUE_DASHBOARD_ACTION_UNAVAILABLE}_{entry.entry_id}",
+            )
             return self.async_update_reload_and_abort(
                 entry,
                 reason="reconfigure_successful",
@@ -165,9 +184,43 @@ class CydHAMonitorConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class CydHAMonitorOptionsFlow(OptionsFlow):
-    """Configure one or more entity threshold alerts."""
+    """Configure dashboard sources and entity threshold alerts."""
 
     async def async_step_init(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["dashboard", "alerts"],
+        )
+
+    async def async_step_dashboard(
+        self, user_input: dict[str, Any] | None = None
+    ) -> ConfigFlowResult:
+        if user_input is not None:
+            try:
+                dashboard = validate_dashboard(user_input)
+            except (TypeError, ValueError):
+                return self.async_show_form(
+                    step_id="dashboard",
+                    data_schema=self._dashboard_schema(user_input),
+                    errors={"base": "invalid_dashboard"},
+                )
+            return self.async_create_entry(
+                title="",
+                data={
+                    **self.config_entry.options,
+                    **dashboard,
+                    CONF_DASHBOARD_SETTINGS_SAVED: True,
+                },
+            )
+
+        return self.async_show_form(
+            step_id="dashboard",
+            data_schema=self._dashboard_schema(self.config_entry.options),
+        )
+
+    async def async_step_alerts(
         self, user_input: dict[str, Any] | None = None
     ) -> ConfigFlowResult:
         if user_input is not None:
@@ -175,25 +228,59 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
                 rules = validate_rules(user_input.get(CONF_RULES, []))
             except (TypeError, ValueError):
                 return self.async_show_form(
-                    step_id="init",
-                    data_schema=self._schema(user_input.get(CONF_RULES, [])),
+                    step_id="alerts",
+                    data_schema=self._rules_schema(user_input.get(CONF_RULES, [])),
                     errors={"base": "invalid_rules"},
                 )
-            return self.async_create_entry(title="", data={CONF_RULES: rules})
+            return self.async_create_entry(
+                title="",
+                data={**self.config_entry.options, CONF_RULES: rules},
+            )
 
         return self.async_show_form(
-            step_id="init",
-            data_schema=self._schema(self.config_entry.options.get(CONF_RULES, [])),
+            step_id="alerts",
+            data_schema=self._rules_schema(self.config_entry.options.get(CONF_RULES, [])),
         )
 
     @staticmethod
-    def _schema(rules: list[dict[str, Any]] | None = None) -> vol.Schema:
+    def _rules_schema(rules: list[dict[str, Any]] | None = None) -> vol.Schema:
         rules = rules or []
         return vol.Schema(
             {
                 vol.Required(CONF_RULES, default=rules): _rules_selector(),
             }
         )
+
+    def _dashboard_schema(self, values: dict[str, Any]) -> vol.Schema:
+        schema: dict[Any, Any] = {}
+        for field in (
+            CONF_MAIN_POWER_ENTITY,
+            CONF_DAILY_ENERGY_ENTITY,
+            CONF_CLAUDE_SESSION_ENTITY,
+            CONF_CLAUDE_WEEK_ENTITY,
+            CONF_CLAUDE_EXTRA_USED_ENTITY,
+            CONF_CLAUDE_EXTRA_LIMIT_ENTITY,
+            CONF_CLAUDE_EXTRA_PERCENT_ENTITY,
+        ):
+            schema[vol.Optional(field, default=values.get(field))] = (
+                selector.EntitySelector({"domain": "sensor"})
+            )
+        schema[vol.Required(
+            CONF_CLAUDE_EXTRA_MODE,
+            default=values.get(CONF_CLAUDE_EXTRA_MODE, "used"),
+        )] = selector.SelectSelector(
+            {
+                "options": [
+                    {"value": "used", "label": "Used"},
+                    {"value": "remaining", "label": "Remaining"},
+                ]
+            }
+        )
+        schema[vol.Optional(
+            CONF_POWER_METRICS,
+            default=values.get(CONF_POWER_METRICS, []),
+        )] = _power_metrics_selector()
+        return vol.Schema(schema)
 
 
 def _device_title(hass: Any, device_id: str) -> str:
@@ -207,4 +294,25 @@ def _device_title(hass: Any, device_id: str) -> str:
         getattr(device, "name_by_user", None)
         or getattr(device, "name", None)
         or device_id
+    )
+
+
+def _power_metrics_selector() -> selector.ObjectSelector:
+    """Select up to four named numeric power entities for the energy page."""
+    return selector.ObjectSelector(
+        {
+            "multiple": True,
+            "fields": {
+                CONF_METRIC_ENTITY_ID: {
+                    "required": True,
+                    "label": "Power sensor",
+                    "selector": selector.EntitySelector({"domain": "sensor"}),
+                },
+                CONF_METRIC_NAME: {
+                    "required": True,
+                    "label": "Display name",
+                    "selector": selector.TextSelector(),
+                },
+            },
+        }
     )

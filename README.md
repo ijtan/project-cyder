@@ -1,25 +1,24 @@
 # Project Cyder
 
-Project Cyder configures Home Assistant threshold alerts for ESPHome CYD
-displays. Home Assistant monitors numeric entities and sends priority alerts to
-the selected display through its ESPHome actions.
+Project Cyder configures dashboard sensors and priority alerts for an ESPHome
+CYD display from Home Assistant.
 
 ## Requirements
 
 - Home Assistant with HACS installed.
-- An ESPHome display exposing the `display_alert`, `clear_alert`, and
-  `dismiss_alert` actions.
+- CYD firmware exposing `display_alert`, `clear_alert`, `dismiss_alert`, and
+  `update_dashboard` ESPHome actions.
 
-This integration configures alerts only. This repository does not include
-ESPHome YAML or install firmware. Dashboard pages, usage display preferences,
-and cameras are not configurable here.
+The firmware is installed separately. This repository does not include ESPHome
+YAML or install firmware. Update the device once to add `update_dashboard`;
+sensor and presentation changes are then made in Home Assistant. Camera setup is
+not supported yet.
 
 ## Current release
 
-Version 0.1.0 lets you select an ESPHome display and configure numeric-entity
-threshold alerts in Home Assistant. It sends Notice, Warning, and Critical
-alerts through the display's ESPHome actions. A live Home Assistant setup and
-alert call have not yet been verified.
+Version 0.2.0 supports HA selection of the main power and daily energy sensors,
+up to four named power metrics, Claude usage sources and used/remaining display,
+plus Notice, Warning, and Critical threshold alerts.
 
 ## Install
 
@@ -33,29 +32,34 @@ alert call have not yet been verified.
    manually first. If adding it manually, use `ijtan/project-cyder` and the
    **Integration** category.
 3. Download Project Cyder in HACS and restart Home Assistant.
+4. Install CYD firmware exposing the required actions.
 
 After installation, use this button to start setup in Home Assistant:
 
 [![Add Project Cyder to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start?domain=cyd_ha_monitor)
 
 You can also add **Project Cyder** from **Settings > Devices & services**.
-Select the ESPHome display, then open the integration options to add alert rules.
+Select the ESPHome display, then open its options.
 
-Each rule selects a numeric entity, direction, threshold, hysteresis, priority,
-title, and message. Threshold comparisons are strict. An active rule clears
+In **Dashboard and usage**, choose the main power and daily energy sensors,
+optional named power metrics, and Claude usage entities. Main power is converted
+to kW, daily energy to kWh, and additional power metrics to W when their HA units
+are recognized. Choose whether extra Claude usage shows credits used or
+remaining. Remaining is the configured limit minus used credits.
+
+In **Alert rules**, choose numeric entities, direction, threshold, hysteresis,
+priority, title, and message. Comparisons are strict; an active rule clears
 after its value crosses the threshold by the configured hysteresis. Invalid or
 unavailable states do not clear active alerts. The highest-priority active rule
 is shown: 1 for Notice, 2 for Warning, and 3 for Critical. The first configured
 rule wins ties.
 
-Alerts sent by Project Cyder cannot be dismissed on the display. The firmware
-does not report touchscreen dismissals to Home Assistant, so alerts remain
-active until their rules clear.
+Alerts sent by Project Cyder cannot be dismissed on the display. They remain
+active until their rules clear because the firmware does not report touchscreen
+dismissals to Home Assistant.
 
 ## Roadmap
 
-- Configure dashboard entities and used/remaining and reset presentation from
-  Home Assistant.
 - Add camera selection, starting with snapshots.
 - Verify screen rendering and touch behavior on the CYD, then add screenshots.
 

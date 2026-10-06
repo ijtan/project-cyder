@@ -10,6 +10,7 @@ from .const import (
     ACTION_CLEAR_ALERT,
     ACTION_DISMISS_ALERT,
     ACTION_DISPLAY_ALERT,
+    ACTION_UPDATE_DASHBOARD,
     ESPHOME_DOMAIN,
 )
 
@@ -24,6 +25,7 @@ class ActionServices:
     display_alert: str
     clear_alert: str
     dismiss_alert: str
+    update_dashboard: str | None = None
 
 
 def service_names(device_prefix: str) -> ActionServices:
@@ -32,6 +34,7 @@ def service_names(device_prefix: str) -> ActionServices:
         display_alert=f"{device_prefix}_{ACTION_DISPLAY_ALERT}",
         clear_alert=f"{device_prefix}_{ACTION_CLEAR_ALERT}",
         dismiss_alert=f"{device_prefix}_{ACTION_DISMISS_ALERT}",
+        update_dashboard=f"{device_prefix}_{ACTION_UPDATE_DASHBOARD}",
     )
 
 
@@ -133,7 +136,17 @@ def resolve_action_services(
     for candidate in candidates:
         prefix = candidate.replace("-", "_")
         if prefix in prefixes:
-            return service_names(prefix)
+            services = service_names(prefix)
+            return ActionServices(
+                display_alert=services.display_alert,
+                clear_alert=services.clear_alert,
+                dismiss_alert=services.dismiss_alert,
+                update_dashboard=(
+                    services.update_dashboard
+                    if services.update_dashboard in registered_services
+                    else None
+                ),
+            )
 
     # Some core versions expose an edited display name in the DeviceEntry but
     # preserve the original node name in service metadata. Match only a prefix
@@ -151,7 +164,16 @@ def resolve_action_services(
         if all(
             _describes_device(description, candidates) for description in descriptions
         ):
-            return action_services
+            return ActionServices(
+                display_alert=action_services.display_alert,
+                clear_alert=action_services.clear_alert,
+                dismiss_alert=action_services.dismiss_alert,
+                update_dashboard=(
+                    action_services.update_dashboard
+                    if action_services.update_dashboard in registered_services
+                    else None
+                ),
+            )
     return None
 
 

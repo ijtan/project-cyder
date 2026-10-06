@@ -66,6 +66,21 @@ class ServiceMapTests(unittest.TestCase):
 
         self.assertEqual(resolve_action_services(device, [entry], registered), names)
 
+    def test_dashboard_action_is_optional_for_older_firmware(self) -> None:
+        names = service_names("monitor_node")
+        device = FakeDevice({("esphome", "monitor-node")})
+        entry = FakeEntry("esphome", "Monitor", {"node_name": "monitor-node"})
+        registered = {
+            names.display_alert: FakeService(""),
+            names.clear_alert: FakeService(""),
+            names.dismiss_alert: FakeService(""),
+        }
+
+        result = resolve_action_services(device, [entry], registered)
+
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.update_dashboard)
+
     def test_recovers_missing_device_config_entries_from_esphome_entities(self) -> None:
         device = FakeDevice(set(), name="Desk HASS")
         entities = [
