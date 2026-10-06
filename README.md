@@ -37,14 +37,6 @@ Alerts sent by Project Cyder cannot be dismissed on the display. The firmware
 does not report touchscreen dismissals to Home Assistant, so alerts remain
 active until their rules clear.
 
-## Tests
-
-Run the unit tests with Python 3.12 or newer:
-
-```sh
-python3 -m unittest discover -s tests -v
-```
-
 Report bugs at <https://github.com/ijtan/project-cyder/issues>.
 
 ## License
