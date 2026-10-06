@@ -39,16 +39,11 @@
   "issues": {
     "actions_unavailable": {
       "title": "ESPHome alert actions unavailable for {device_name}",
-      "description": "This integration needs the device-prefixed display_alert, clear_alert, and dismiss_alert services from ESPHome. Check that this entry selects the correct ESPHome device, install/enable firmware exposing all three actions, then reload or reconfigure this integration entry. Threshold alerts are non-dismissible so HA remains the source of truth."
-    }
-  },
-  "repairs": {
-    "issue": {
-      "actions_unavailable": {
+      "fix_flow": {
         "step": {
           "init": {
             "title": "Reconfigure the CYD ESPHome device",
-            "description": "First install/enable the firmware actions display_alert, clear_alert, and dismiss_alert in ESPHome. Continue to select the device again; the integration will verify its registered action services when it reloads.",
+            "description": "This integration needs the device-prefixed display_alert, clear_alert, and dismiss_alert services. Check that this entry selects the correct ESPHome device, install firmware exposing all three actions, then continue to verify the registered services.",
             "data": {},
             "submit": "Continue"
           }

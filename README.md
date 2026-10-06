@@ -42,3 +42,7 @@ python3 -m unittest discover -s tests -v
 ```
 
 Report bugs at <https://github.com/ijtan/project-cyder/issues>.
+
+## License
+
+Project Cyder is licensed under GPL-3.0-only. See [LICENSE](LICENSE).

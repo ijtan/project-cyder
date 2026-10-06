@@ -10,13 +10,13 @@ permissions:
 
 jobs:
   tests:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     strategy:
       matrix:
         python-version: ["3.12", "3.13"]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - run: python -m unittest discover -s tests -v
@@ -32,8 +32,9 @@ jobs:
           strings = json.loads(Path("custom_components/cyd_ha_monitor/strings.json").read_text())
           translation = json.loads(Path("custom_components/cyd_ha_monitor/translations/en.json").read_text())
 
-          required = {"domain", "name", "codeowners", "config_flow", "documentation", "integration_type", "issue_tracker", "iot_class", "version"}
+          required = {"domain", "name", "codeowners", "config_flow", "dependencies", "documentation", "integration_type", "issue_tracker", "iot_class", "version"}
           assert required <= manifest.keys()
           assert hacs["name"] == manifest["name"] == "Project Cyder"
           assert strings == translation
+          assert Path("LICENSE").is_file()
           PY
