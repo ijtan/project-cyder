@@ -73,7 +73,7 @@ from .const import (
     ISSUE_ACTIONS_UNAVAILABLE,
     ISSUE_DASHBOARD_ACTION_UNAVAILABLE,
 )
-from .dashboard import validate_dashboard
+from .dashboard import _looks_like_entity_id, validate_dashboard
 
 
 def _device_selector() -> selector.DeviceSelector:
@@ -332,18 +332,22 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
             CONF_CLAUDE_EXTRA_LIMIT_ENTITY,
             CONF_CLAUDE_EXTRA_PERCENT_ENTITY,
         ):
-            schema[vol.Optional(field, default=values.get(field))] = (
-                selector.EntitySelector(
-                    {
-                        "domain": (
-                            "climate"
-                            if field == CONF_CLIMATE_ENTITY
-                            else "camera"
-                            if field == CONF_CAMERA_ENTITY
-                            else "sensor"
-                        )
-                    }
-                )
+            entity_default = _entity_selector_default(values.get(field))
+            field_key = (
+                vol.Optional(field, default=entity_default)
+                if entity_default is not None
+                else vol.Optional(field)
+            )
+            schema[field_key] = selector.EntitySelector(
+                {
+                    "domain": (
+                        "climate"
+                        if field == CONF_CLIMATE_ENTITY
+                        else "camera"
+                        if field == CONF_CAMERA_ENTITY
+                        else "sensor"
+                    )
+                }
             )
         schema[
             vol.Optional(
@@ -504,18 +508,53 @@ def _ai_providers_default(values: dict[str, Any]) -> list[dict[str, Any]]:
     """Migrate the legacy named-provider fields into the repeatable selector."""
     providers = values.get(CONF_AI_PROVIDERS)
     if providers is not None:
-        return providers
+        return _sanitize_ai_provider_defaults(providers)
     session = values.get(CONF_CODEX_SESSION_ENTITY)
     week = values.get(CONF_CODEX_WEEK_ENTITY)
-    if not session and not week:
+    session = _entity_selector_default(session)
+    week = _entity_selector_default(week)
+    if session is None and week is None:
         return []
-    return [
-        {
-            CONF_PROVIDER_NAME: values.get(CONF_CODEX_NAME, "Codex"),
-            CONF_PROVIDER_SESSION_ENTITY: session,
-            CONF_PROVIDER_WEEK_ENTITY: week,
-        }
-    ]
+    provider = {CONF_PROVIDER_NAME: values.get(CONF_CODEX_NAME, "Codex")}
+    if session is not None:
+        provider[CONF_PROVIDER_SESSION_ENTITY] = session
+    if week is not None:
+        provider[CONF_PROVIDER_WEEK_ENTITY] = week
+    return [provider]
+
+
+def _entity_selector_default(value: Any) -> str | None:
+    """Return a valid entity ID default, never ``None``/empty values to HA selectors."""
+    if not isinstance(value, str):
+        return None
+    entity_id = value.strip()
+    return entity_id if _looks_like_entity_id(entity_id) else None
+
+
+def _sanitize_ai_provider_defaults(providers: Any) -> list[dict[str, Any]]:
+    """Drop empty optional entity fields from repeatable-selector defaults."""
+    if not isinstance(providers, list):
+        return []
+
+    entity_fields = (
+        CONF_PROVIDER_SESSION_ENTITY,
+        CONF_PROVIDER_WEEK_ENTITY,
+        CONF_PROVIDER_SESSION_RESET_ENTITY,
+        CONF_PROVIDER_WEEK_RESET_ENTITY,
+    )
+    sanitized: list[dict[str, Any]] = []
+    for provider in providers:
+        if not isinstance(provider, dict):
+            continue
+        cleaned = dict(provider)
+        for field in entity_fields:
+            entity_id = _entity_selector_default(cleaned.get(field))
+            if entity_id is None:
+                cleaned.pop(field, None)
+            else:
+                cleaned[field] = entity_id
+        sanitized.append(cleaned)
+    return sanitized
 
 
 def _ai_providers_selector() -> selector.ObjectSelector:

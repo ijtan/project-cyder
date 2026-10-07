@@ -20,7 +20,8 @@ Assistant internal URL that the CYD can reach on the local network.
 
 Version 0.2.0 adds HA-configurable dashboard pages and entities to main/daily
 energy sensors, four named power metrics, Claude used/remaining display, and
-Notice, Warning, and Critical threshold alerts.
+Notice, Warning, and Critical threshold alerts. Version 0.2.1 fixes empty
+optional entity selectors in the Dashboard and usage options form.
 
 Select climate, light, and switch entities once; Project Cyder groups them by
 Home Assistant Area, with unassigned entities collected in **Unassigned**. The
