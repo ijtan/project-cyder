@@ -18,28 +18,24 @@ Assistant internal URL that the CYD can reach on the local network.
 
 ## Current release
 
-Version 0.2.0 supports HA selection of the main power and daily energy sensors,
-up to four named power metrics, Claude usage sources and used/remaining display,
-plus Notice, Warning, and Critical threshold alerts.
+Version 0.2.0 adds HA-configurable dashboard pages and entities to main/daily
+energy sensors, four named power metrics, Claude used/remaining display, and
+Notice, Warning, and Critical threshold alerts.
 
-Unreleased development changes add Home Assistant Area-based room controls and
-support up to three additional AI providers alongside built-in Claude usage.
 Select climate, light, and switch entities once; Project Cyder groups them by
-their assigned Area, with unassigned entities collected in **Unassigned**. The
+Home Assistant Area, with unassigned entities collected in **Unassigned**. The
 display supports up to four Areas and five selected devices per Area. A room
 opens a compact device list: thermostats open target/mode controls, while lights
-and switches toggle directly with visible state. The separate optional climate
-entity remains available for the Home overview. Give each additional provider a
-short name (for example, Codex, Gemini, or OpenAI) and select its session and
-weekly percentage sensors. Sensors can come from any HA integration; provider
-credentials are not stored on the ESPHome device.
+and switches toggle directly. The optional climate entity remains available for
+the Home overview.
 
-The unreleased options also configure idle-only rotation, dock/rotation page
-order, page visibility, and per-alert page routing. A routed page stays on screen
-for ten seconds after the alert clears unless the display is touched; the prior
-page then resumes.
-The Sensor Monitor can be populated with up to five named HA sensors, including
-text-valued sensors such as door or appliance states.
+Claude plus up to three additional AI providers (such as Codex, Gemini, or
+OpenAI) can show session and weekly usage. Providers can use sensors from any HA
+integration; credentials are not stored on the ESPHome device. Configure idle-
+aware rotation, page visibility and dock/rotation order, per-alert page routing,
+and up to five named Sensor Monitor rows, including text-valued states. A routed
+page stays visible for ten seconds after its alert clears unless the display is
+touched; then the previous page resumes.
 
 ## Install
 
