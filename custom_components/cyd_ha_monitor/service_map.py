@@ -10,6 +10,7 @@ from .const import (
     ACTION_CLEAR_ALERT,
     ACTION_DISMISS_ALERT,
     ACTION_DISPLAY_ALERT,
+    ACTION_FOCUS_PAGE,
     ACTION_UPDATE_DASHBOARD,
     ESPHOME_DOMAIN,
 )
@@ -26,6 +27,7 @@ class ActionServices:
     clear_alert: str
     dismiss_alert: str
     update_dashboard: str | None = None
+    focus_page: str | None = None
 
 
 def service_names(device_prefix: str) -> ActionServices:
@@ -35,6 +37,7 @@ def service_names(device_prefix: str) -> ActionServices:
         clear_alert=f"{device_prefix}_{ACTION_CLEAR_ALERT}",
         dismiss_alert=f"{device_prefix}_{ACTION_DISMISS_ALERT}",
         update_dashboard=f"{device_prefix}_{ACTION_UPDATE_DASHBOARD}",
+        focus_page=f"{device_prefix}_{ACTION_FOCUS_PAGE}",
     )
 
 
@@ -146,6 +149,11 @@ def resolve_action_services(
                     if services.update_dashboard in registered_services
                     else None
                 ),
+                focus_page=(
+                    services.focus_page
+                    if services.focus_page in registered_services
+                    else None
+                ),
             )
 
     # Some core versions expose an edited display name in the DeviceEntry but
@@ -171,6 +179,11 @@ def resolve_action_services(
                 update_dashboard=(
                     action_services.update_dashboard
                     if action_services.update_dashboard in registered_services
+                    else None
+                ),
+                focus_page=(
+                    action_services.focus_page
+                    if action_services.focus_page in registered_services
                     else None
                 ),
             )

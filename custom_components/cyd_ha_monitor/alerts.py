@@ -8,6 +8,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from .const import (
+    ATTENTION_PAGE_VALUES,
+    CONF_ATTENTION_PAGE,
     CONF_DIRECTION,
     CONF_ENTITY_ID,
     CONF_HYSTERESIS,
@@ -33,6 +35,7 @@ class Rule:
     priority: int
     title: str
     message: str
+    attention_page: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -42,6 +45,7 @@ class AlertCommand:
     priority: int
     title: str
     message: str
+    attention_page: str = "none"
 
 
 def _finite_number(value: Any, field: str) -> float:
@@ -72,6 +76,7 @@ def validate_rules(values: Any) -> list[dict[str, Any]]:
         priority = value.get(CONF_PRIORITY, 2)
         title = value.get(CONF_TITLE)
         message = value.get(CONF_MESSAGE)
+        attention_page = value.get(CONF_ATTENTION_PAGE, "none")
         if not isinstance(entity_id, str) or not entity_id.strip():
             raise ValueError(f"Rule {index} needs a numeric entity")
         if direction not in DIRECTIONS:
@@ -86,6 +91,8 @@ def validate_rules(values: Any) -> list[dict[str, Any]]:
             raise ValueError(f"Rule {index} needs a title")
         if not isinstance(message, str) or not message.strip():
             raise ValueError(f"Rule {index} needs a message")
+        if attention_page not in ATTENTION_PAGE_VALUES:
+            raise ValueError(f"Rule {index} has an invalid attention page")
 
         threshold = _finite_number(value.get(CONF_THRESHOLD), "threshold")
         hysteresis = _finite_number(value.get(CONF_HYSTERESIS, 0), "hysteresis")
@@ -101,6 +108,7 @@ def validate_rules(values: Any) -> list[dict[str, Any]]:
                 CONF_PRIORITY: int(priority),
                 CONF_TITLE: title.strip(),
                 CONF_MESSAGE: message.strip(),
+                CONF_ATTENTION_PAGE: attention_page,
             }
         )
     return validated
@@ -181,5 +189,7 @@ class RuleEngine:
         ):
             if self._active[index]:
                 rule = self.rules[index]
-                return AlertCommand(rule.priority, rule.title, rule.message)
+                return AlertCommand(
+                    rule.priority, rule.title, rule.message, rule.attention_page
+                )
         return None

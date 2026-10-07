@@ -9,6 +9,7 @@ from custom_components.cyd_ha_monitor.alerts import (
     numeric_state,
     validate_rules,
 )
+from custom_components.cyd_ha_monitor.const import CONF_ATTENTION_PAGE
 
 
 def rule(
@@ -20,6 +21,7 @@ def rule(
     priority: int = 2,
     title: str = "Warm",
     message: str = "Too warm",
+    attention_page: str = "none",
 ) -> dict[str, object]:
     return {
         "entity_id": entity_id,
@@ -29,6 +31,7 @@ def rule(
         "priority": priority,
         "title": title,
         "message": message,
+        CONF_ATTENTION_PAGE: attention_page,
     }
 
 
@@ -57,6 +60,7 @@ class RuleValidationTests(unittest.TestCase):
         self.assertEqual(result[0]["threshold"], 20.5)
         self.assertEqual(result[0]["hysteresis"], 1.0)
         self.assertEqual(result[0]["priority"], 3)
+        self.assertEqual(result[0][CONF_ATTENTION_PAGE], "none")
 
     def test_optional_hysteresis_and_priority_use_safe_defaults(self) -> None:
         value = rule()
@@ -72,6 +76,7 @@ class RuleValidationTests(unittest.TestCase):
             {"priority": 4},
             {"hysteresis": -0.1},
             {"threshold": "nan"},
+            {"attention_page": "unknown_page"},
         ):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 validate_rules([rule(**changes)])  # type: ignore[arg-type]
@@ -87,11 +92,12 @@ class RuleValidationTests(unittest.TestCase):
 
 class RuleEngineTests(unittest.TestCase):
     def test_above_rule_activates_and_clears_with_hysteresis(self) -> None:
-        engine = RuleEngine([rule()])
+        engine = RuleEngine([rule(attention_page="energy")])
         self.assertEqual(engine.update("sensor.temperature", "20"), (False, None))
         changed, alert = engine.update("sensor.temperature", "20.1")
         self.assertTrue(changed)
         self.assertEqual(alert.title if alert else None, "Warm")
+        self.assertEqual(alert.attention_page if alert else None, "energy")
 
         self.assertEqual(engine.update("sensor.temperature", "19"), (False, alert))
         changed, alert = engine.update("sensor.temperature", "18")
@@ -127,6 +133,7 @@ class RuleEngineTests(unittest.TestCase):
                     priority=3,
                     title="Critical",
                     message="Very warm",
+                    attention_page="energy",
                 ),
             ]
         )
@@ -134,6 +141,7 @@ class RuleEngineTests(unittest.TestCase):
             engine.seed({"sensor.temperature": "21", "sensor.critical": "31"}).title,
             "Critical",
         )
+        self.assertEqual(engine.current.attention_page, "energy")
         changed, alert = engine.update("sensor.critical", "29")
         self.assertTrue(changed)
         self.assertEqual(alert.title if alert else None, "Notice")

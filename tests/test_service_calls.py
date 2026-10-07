@@ -113,6 +113,62 @@ class ServiceCallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(hass.services.calls[0][0:2], ("esphome", names.display_alert))
         self.assertFalse(hass.services.calls[0][2]["dismissible"])
 
+    async def test_attention_page_routes_on_activation_and_restores_on_clear(self) -> None:
+        hass = FakeHass()
+        names = service_names("hallway_cyd")
+        runtime = Runtime(RuleEngine([]), names, "Hallway CYD")
+        attention = AlertCommand(2, "Freezer", "Too warm", "sensors")
+
+        _schedule_transition(hass, runtime, None, attention)
+        await asyncio.gather(*hass.tasks)
+        _schedule_transition(hass, runtime, attention, None)
+        await asyncio.gather(*hass.tasks)
+
+        self.assertEqual(
+            [(service, data) for _domain, service, data in hass.services.calls],
+            [
+                (
+                    names.display_alert,
+                    {
+                        "priority": 2,
+                        "title": "Freezer",
+                        "message": "Too warm",
+                        "dismissible": False,
+                    },
+                ),
+                (names.focus_page, {"page": "sensors"}),
+                (names.clear_alert, {"priority": 2}),
+                (names.focus_page, {"page": "none"}),
+            ],
+        )
+
+    async def test_attention_route_replacement_does_not_restore_between_alerts(self) -> None:
+        hass = FakeHass()
+        names = service_names("hallway_cyd")
+        runtime = Runtime(RuleEngine([]), names, "Hallway CYD")
+        previous = AlertCommand(2, "Warm", "Too warm", "climate")
+        current = AlertCommand(3, "Power", "Power high", "energy")
+
+        _schedule_transition(hass, runtime, previous, current)
+        await asyncio.gather(*hass.tasks)
+
+        self.assertEqual(
+            [(service, data) for _domain, service, data in hass.services.calls],
+            [
+                (names.clear_alert, {"priority": 2}),
+                (
+                    names.display_alert,
+                    {
+                        "priority": 3,
+                        "title": "Power",
+                        "message": "Power high",
+                        "dismissible": False,
+                    },
+                ),
+                (names.focus_page, {"page": "energy"}),
+            ],
+        )
+
     async def test_concurrent_transitions_remain_ordered(self) -> None:
         services = BlockingFirstCallServices()
         hass = FakeHass(services)

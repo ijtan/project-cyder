@@ -10,6 +10,7 @@ from typing import TYPE_CHECKING, Any
 from .alerts import AlertCommand, RuleEngine
 from .dashboard import dashboard_action_data, dashboard_entities, validate_dashboard
 from .const import (
+    CONF_ATTENTION_PAGE,
     CONF_DEVICE_ID,
     CONF_DASHBOARD_SETTINGS_SAVED,
     CONF_RULES,
@@ -17,6 +18,7 @@ from .const import (
     ESPHOME_DOMAIN,
     ISSUE_ACTIONS_UNAVAILABLE,
     ISSUE_DASHBOARD_ACTION_UNAVAILABLE,
+    ISSUE_FOCUS_PAGE_ACTION_UNAVAILABLE,
 )
 from .service_map import ActionServices, async_get_device_action_services
 
@@ -75,14 +77,42 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 
     rules = entry.options.get(CONF_RULES, [])
     engine = RuleEngine(rules)
+    attention_routing_configured = any(
+        isinstance(rule, dict) and rule.get(CONF_ATTENTION_PAGE, "none") != "none"
+        for rule in rules
+    )
+    focus_page_issue_id = f"{ISSUE_FOCUS_PAGE_ACTION_UNAVAILABLE}_{entry.entry_id}"
+    if attention_routing_configured and action_services.focus_page is None:
+        ir.async_create_issue(
+            hass,
+            DOMAIN,
+            focus_page_issue_id,
+            data={"entry_id": entry.entry_id},
+            is_fixable=True,
+            is_persistent=True,
+            severity=ir.IssueSeverity.WARNING,
+            translation_key=ISSUE_FOCUS_PAGE_ACTION_UNAVAILABLE,
+            translation_placeholders={"device_name": entry.title},
+        )
+        _LOGGER.warning(
+            "Attention page routing is configured for %s, but its ESPHome firmware "
+            "does not expose the focus_page action. Install matching CYD firmware.",
+            entry.title,
+        )
+    else:
+        ir.async_delete_issue(hass, DOMAIN, focus_page_issue_id)
     try:
-        dashboard_options = validate_dashboard(entry.options)
+        dashboard_options = validate_dashboard(entry.options, hass)
     except (TypeError, ValueError):
         _LOGGER.exception("Invalid dashboard settings for %s", entry.title)
         dashboard_options = validate_dashboard({})
     selected_dashboard_entities = dashboard_entities(dashboard_options)
+    dashboard_sync_configured = bool(
+        selected_dashboard_entities
+        or entry.options.get(CONF_DASHBOARD_SETTINGS_SAVED, False)
+    )
     dashboard_issue_id = f"{ISSUE_DASHBOARD_ACTION_UNAVAILABLE}_{entry.entry_id}"
-    if selected_dashboard_entities and action_services.update_dashboard is None:
+    if dashboard_sync_configured and action_services.update_dashboard is None:
         ir.async_create_issue(
             hass,
             DOMAIN,
@@ -205,7 +235,13 @@ async def _async_send_dashboard_update(hass: HomeAssistant, runtime: Runtime) ->
             await hass.services.async_call(
                 ESPHOME_DOMAIN,
                 service,
-                dashboard_action_data(hass, runtime.dashboard_options),
+                dashboard_action_data(
+                    hass,
+                    {
+                        **runtime.dashboard_options,
+                        CONF_DASHBOARD_SETTINGS_SAVED: runtime.dashboard_settings_saved,
+                    },
+                ),
             )
         except asyncio.CancelledError:
             raise
@@ -253,6 +289,19 @@ async def _async_send_transition(
                     "dismissible": False,
                 },
             )
+        if runtime.service_names.focus_page is not None:
+            attention_page = (
+                current.attention_page
+                if current is not None
+                else "none"
+            )
+            if attention_page != "none" or (
+                previous is not None and previous.attention_page != "none"
+            ):
+                await call_service(
+                    runtime.service_names.focus_page,
+                    {"page": attention_page},
+                )
 
 
 __all__ = ["async_setup_entry", "async_unload_entry"]

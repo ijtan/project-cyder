@@ -17,12 +17,25 @@ from homeassistant.helpers import selector
 
 from .alerts import validate_rules
 from .const import (
+    ATTENTION_PAGE_VALUES,
+    CONF_ATTENTION_PAGE,
+    CONF_AI_PROVIDERS,
+    CONF_AUTO_ROTATION,
+    CONF_CAMERA_ENTITY,
+    CONF_CAMERA_REFRESH_INTERVAL,
     CONF_CLAUDE_EXTRA_LIMIT_ENTITY,
     CONF_CLAUDE_EXTRA_MODE,
     CONF_CLAUDE_EXTRA_PERCENT_ENTITY,
     CONF_CLAUDE_EXTRA_USED_ENTITY,
     CONF_CLAUDE_SESSION_ENTITY,
+    CONF_CLAUDE_SESSION_RESET_ENTITY,
     CONF_CLAUDE_WEEK_ENTITY,
+    CONF_CLAUDE_WEEK_RESET_ENTITY,
+    CONF_CLIMATE_ENTITY,
+    CONF_ROOM_ENTITIES,
+    CONF_CODEX_NAME,
+    CONF_CODEX_SESSION_ENTITY,
+    CONF_CODEX_WEEK_ENTITY,
     CONF_DAILY_ENERGY_ENTITY,
     CONF_DASHBOARD_SETTINGS_SAVED,
     CONF_DEVICE_ID,
@@ -33,8 +46,26 @@ from .const import (
     CONF_MESSAGE,
     CONF_METRIC_ENTITY_ID,
     CONF_METRIC_NAME,
-    CONF_PRIORITY,
     CONF_POWER_METRICS,
+    CONF_PRIORITY,
+    CONF_PROVIDER_NAME,
+    CONF_PROVIDER_SESSION_ENTITY,
+    CONF_PROVIDER_SESSION_RESET_ENTITY,
+    CONF_PROVIDER_WEEK_ENTITY,
+    CONF_PROVIDER_WEEK_RESET_ENTITY,
+    CONF_ROTATION_INTERVAL,
+    CONF_ROTATION_PAGE_1,
+    CONF_ROTATION_PAGE_2,
+    CONF_ROTATION_PAGE_3,
+    CONF_ROTATION_PAGE_4,
+    CONF_ROTATION_PAGE_5,
+    CONF_ROTATION_PAGE_6,
+    CONF_SENSOR_METRICS,
+    CONF_SHOW_AI_PAGE,
+    CONF_SHOW_CAMERA_PAGE,
+    CONF_SHOW_CLIMATE_PAGE,
+    CONF_SHOW_ENERGY_PAGE,
+    CONF_SHOW_SENSORS_PAGE,
     CONF_RULES,
     CONF_THRESHOLD,
     CONF_TITLE,
@@ -109,6 +140,29 @@ def _rules_selector() -> selector.ObjectSelector:
                     "required": True,
                     "label": "Message",
                     "selector": selector.TextSelector({"multiline": True}),
+                },
+                CONF_ATTENTION_PAGE: {
+                    "required": False,
+                    "label": "Show dashboard page",
+                    "selector": selector.SelectSelector(
+                        {
+                            "options": [
+                                {
+                                    "value": page,
+                                    "label": {
+                                        "none": "Keep current page",
+                                        "home": "Home",
+                                        "ai": "AI usage",
+                                        "climate": "Climate",
+                                        "sensors": "Sensors",
+                                        "energy": "Energy",
+                                        "camera": "Camera snapshots",
+                                    }[page],
+                                }
+                                for page in ATTENTION_PAGE_VALUES
+                            ]
+                        }
+                    ),
                 },
             },
         }
@@ -199,7 +253,9 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         if user_input is not None:
             try:
-                dashboard = validate_dashboard(user_input)
+                dashboard = validate_dashboard(
+                    user_input, self.hass, enforce_room_capacity=True
+                )
             except (TypeError, ValueError):
                 return self.async_show_form(
                     step_id="dashboard",
@@ -244,7 +300,11 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
 
     @staticmethod
     def _rules_schema(rules: list[dict[str, Any]] | None = None) -> vol.Schema:
-        rules = rules or []
+        rules = [
+            {**rule, CONF_ATTENTION_PAGE: rule.get(CONF_ATTENTION_PAGE, "none")}
+            for rule in (rules or [])
+            if isinstance(rule, dict)
+        ]
         return vol.Schema(
             {
                 vol.Required(CONF_RULES, default=rules): _rules_selector(),
@@ -253,22 +313,108 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
 
     def _dashboard_schema(self, values: dict[str, Any]) -> vol.Schema:
         schema: dict[Any, Any] = {}
+        schema[
+            vol.Optional(
+                CONF_ROOM_ENTITIES,
+                default=values.get(CONF_ROOM_ENTITIES, []),
+            )
+        ] = _room_entities_selector()
         for field in (
+            CONF_CLIMATE_ENTITY,
+            CONF_CAMERA_ENTITY,
             CONF_MAIN_POWER_ENTITY,
             CONF_DAILY_ENERGY_ENTITY,
             CONF_CLAUDE_SESSION_ENTITY,
             CONF_CLAUDE_WEEK_ENTITY,
+            CONF_CLAUDE_SESSION_RESET_ENTITY,
+            CONF_CLAUDE_WEEK_RESET_ENTITY,
             CONF_CLAUDE_EXTRA_USED_ENTITY,
             CONF_CLAUDE_EXTRA_LIMIT_ENTITY,
             CONF_CLAUDE_EXTRA_PERCENT_ENTITY,
         ):
             schema[vol.Optional(field, default=values.get(field))] = (
-                selector.EntitySelector({"domain": "sensor"})
+                selector.EntitySelector(
+                    {
+                        "domain": (
+                            "climate"
+                            if field == CONF_CLIMATE_ENTITY
+                            else "camera"
+                            if field == CONF_CAMERA_ENTITY
+                            else "sensor"
+                        )
+                    }
+                )
             )
-        schema[vol.Required(
-            CONF_CLAUDE_EXTRA_MODE,
-            default=values.get(CONF_CLAUDE_EXTRA_MODE, "used"),
-        )] = selector.SelectSelector(
+        schema[
+            vol.Optional(
+                CONF_AUTO_ROTATION,
+                default=values.get(CONF_AUTO_ROTATION, False),
+            )
+        ] = selector.BooleanSelector()
+        schema[
+            vol.Optional(
+                CONF_ROTATION_INTERVAL,
+                default=values.get(CONF_ROTATION_INTERVAL, 30),
+            )
+        ] = selector.NumberSelector(
+            {"min": 10, "max": 120, "step": 5, "mode": "slider"}
+        )
+        schema[
+            vol.Optional(
+                CONF_CAMERA_REFRESH_INTERVAL,
+                default=values.get(CONF_CAMERA_REFRESH_INTERVAL, 30),
+            )
+        ] = selector.NumberSelector(
+            {"min": 10, "max": 120, "step": 5, "mode": "slider"}
+        )
+        for field in (
+            CONF_SHOW_AI_PAGE,
+            CONF_SHOW_CLIMATE_PAGE,
+            CONF_SHOW_SENSORS_PAGE,
+            CONF_SHOW_ENERGY_PAGE,
+            CONF_SHOW_CAMERA_PAGE,
+        ):
+            schema[vol.Optional(field, default=values.get(field, True))] = (
+                selector.BooleanSelector()
+            )
+        page_options = (
+            ("home", "Home"),
+            ("ai", "AI usage"),
+            ("climate", "Climate"),
+            ("sensors", "Sensors"),
+            ("energy", "Energy"),
+            ("camera", "Camera snapshots"),
+        )
+        page_choices = [
+            {"value": value, "label": label} for value, label in page_options
+        ]
+        page_fields = (
+            CONF_ROTATION_PAGE_1,
+            CONF_ROTATION_PAGE_2,
+            CONF_ROTATION_PAGE_3,
+            CONF_ROTATION_PAGE_4,
+            CONF_ROTATION_PAGE_5,
+            CONF_ROTATION_PAGE_6,
+        )
+        for index, field in enumerate(page_fields):
+            schema[
+                vol.Optional(
+                    field,
+                    default=values.get(field, page_options[index][0]),
+                )
+            ] = selector.SelectSelector({"options": page_choices})
+        schema[
+            vol.Optional(
+                CONF_AI_PROVIDERS,
+                default=_ai_providers_default(values),
+            )
+        ] = _ai_providers_selector()
+        schema[
+            vol.Required(
+                CONF_CLAUDE_EXTRA_MODE,
+                default=values.get(CONF_CLAUDE_EXTRA_MODE, "used"),
+            )
+        ] = selector.SelectSelector(
             {
                 "options": [
                     {"value": "used", "label": "Used"},
@@ -276,10 +422,18 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
                 ]
             }
         )
-        schema[vol.Optional(
-            CONF_POWER_METRICS,
-            default=values.get(CONF_POWER_METRICS, []),
-        )] = _power_metrics_selector()
+        schema[
+            vol.Optional(
+                CONF_POWER_METRICS,
+                default=values.get(CONF_POWER_METRICS, []),
+            )
+        ] = _power_metrics_selector()
+        schema[
+            vol.Optional(
+                CONF_SENSOR_METRICS,
+                default=values.get(CONF_SENSOR_METRICS, []),
+            )
+        ] = _sensor_metrics_selector()
         return vol.Schema(schema)
 
 
@@ -312,6 +466,88 @@ def _power_metrics_selector() -> selector.ObjectSelector:
                     "required": True,
                     "label": "Display name",
                     "selector": selector.TextSelector(),
+                },
+            },
+        }
+    )
+
+
+def _room_entities_selector() -> selector.EntitySelector:
+    """Choose controls once; the CYD groups them by their assigned HA Area."""
+    return selector.EntitySelector(
+        {"multiple": True, "domain": ["climate", "light", "switch"]}
+    )
+
+
+def _sensor_metrics_selector() -> selector.ObjectSelector:
+    """Choose up to five named sensors for the glanceable sensor monitor."""
+    return selector.ObjectSelector(
+        {
+            "multiple": True,
+            "fields": {
+                CONF_METRIC_ENTITY_ID: {
+                    "required": True,
+                    "label": "Sensor entity",
+                    "selector": selector.EntitySelector({"domain": "sensor"}),
+                },
+                CONF_METRIC_NAME: {
+                    "required": True,
+                    "label": "Display name",
+                    "selector": selector.TextSelector(),
+                },
+            },
+        }
+    )
+
+
+def _ai_providers_default(values: dict[str, Any]) -> list[dict[str, Any]]:
+    """Migrate the legacy named-provider fields into the repeatable selector."""
+    providers = values.get(CONF_AI_PROVIDERS)
+    if providers is not None:
+        return providers
+    session = values.get(CONF_CODEX_SESSION_ENTITY)
+    week = values.get(CONF_CODEX_WEEK_ENTITY)
+    if not session and not week:
+        return []
+    return [
+        {
+            CONF_PROVIDER_NAME: values.get(CONF_CODEX_NAME, "Codex"),
+            CONF_PROVIDER_SESSION_ENTITY: session,
+            CONF_PROVIDER_WEEK_ENTITY: week,
+        }
+    ]
+
+
+def _ai_providers_selector() -> selector.ObjectSelector:
+    """Select up to three providers with independently optional quota sensors."""
+    return selector.ObjectSelector(
+        {
+            "multiple": True,
+            "fields": {
+                CONF_PROVIDER_NAME: {
+                    "required": True,
+                    "label": "Provider name",
+                    "selector": selector.TextSelector(),
+                },
+                CONF_PROVIDER_SESSION_ENTITY: {
+                    "required": False,
+                    "label": "Session quota percentage",
+                    "selector": selector.EntitySelector({"domain": "sensor"}),
+                },
+                CONF_PROVIDER_WEEK_ENTITY: {
+                    "required": False,
+                    "label": "Weekly quota percentage",
+                    "selector": selector.EntitySelector({"domain": "sensor"}),
+                },
+                CONF_PROVIDER_SESSION_RESET_ENTITY: {
+                    "required": False,
+                    "label": "5-hour reset time",
+                    "selector": selector.EntitySelector({"domain": "sensor"}),
+                },
+                CONF_PROVIDER_WEEK_RESET_ENTITY: {
+                    "required": False,
+                    "label": "7-day reset time",
+                    "selector": selector.EntitySelector({"domain": "sensor"}),
                 },
             },
         }

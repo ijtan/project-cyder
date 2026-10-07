@@ -17,7 +17,7 @@
       }
     },
     "error": {
-      "invalid_rules": "One or more alert rules are invalid. Check their entity, threshold, priority, title, and message."
+      "invalid_rules": "One or more alert rules are invalid. Check their entity, threshold, priority, title, message, and attention page."
     },
     "abort": {
       "already_configured": "This ESPHome device is already configured.",
@@ -36,29 +36,50 @@
       },
       "dashboard": {
         "title": "Dashboard and usage",
-        "description": "Choose the power and energy sensors shown on the display. Power is converted to kW for the main value and graph, and to W for the optional metrics. Claude usage sensors keep their configured units.",
+        "description": "Choose dashboard pages, their dock and rotation order, and the HA entities they show. Select climate, light, and switch entities to group automatically by Home Assistant Area (up to four Areas and five controls per Area); unassigned entities appear together. Home and Display Settings stay available. Add up to three extra AI providers and up to five named sensors; Claude is built in. Reset timestamps on quota entities are detected automatically where available; optional reset-time entities can override them. Hidden pages leave navigation and rotation. Six page-order slots control both dock order and auto-rotation; Camera remains a header shortcut.",
         "data": {
+          "climate_entity": "Thermostat / climate entity",
+          "room_entities": "Room devices (climate, lights, switches)",
+          "camera_entity": "Camera for snapshots",
+          "auto_rotation": "Automatic page rotation",
+          "rotation_interval": "Page interval (seconds)",
+          "camera_refresh_interval": "Camera refresh interval (seconds)",
+          "show_ai_page": "Show AI usage page",
+          "show_climate_page": "Show climate page",
+          "show_sensors_page": "Show sensors page",
+          "show_energy_page": "Show energy page",
+          "show_camera_page": "Show camera snapshot page",
+          "rotation_page_1": "Dock / rotation order — page 1",
+          "rotation_page_2": "Dock / rotation order — page 2",
+          "rotation_page_3": "Dock / rotation order — page 3",
+          "rotation_page_4": "Dock / rotation order — page 4",
+          "rotation_page_5": "Dock / rotation order — page 5",
+          "rotation_page_6": "Dock / rotation order — page 6",
           "main_power_entity": "Main power sensor",
           "daily_energy_entity": "Energy used today sensor",
           "power_metrics": "Additional power metrics",
+          "sensor_metrics": "Sensor monitor rows (up to 5)",
           "claude_session_entity": "Claude session usage percent",
           "claude_week_entity": "Claude weekly usage percent",
+          "claude_session_reset_entity": "Claude 5-hour reset time (optional override)",
+          "claude_week_reset_entity": "Claude 7-day reset time (optional override)",
           "claude_extra_used_entity": "Claude extra usage used",
           "claude_extra_limit_entity": "Claude extra usage limit",
           "claude_extra_percent_entity": "Claude extra usage percent",
-          "claude_extra_mode": "Show extra usage as"
+          "claude_extra_mode": "Show extra usage as",
+          "ai_providers": "Additional AI providers"
         }
       },
       "alerts": {
         "title": "Alert rules",
-        "description": "Add threshold rules. Comparisons are strict; hysteresis controls when an active rule clears.",
+        "description": "Add threshold rules. Comparisons are strict; hysteresis controls when an active rule clears. Optionally route an alert to a related dashboard page; it stays visible for 10 seconds after clearing unless touched, then the previous page returns.",
         "data": {
           "rules": "Threshold alert rules"
         }
       }
     },
     "error": {
-      "invalid_dashboard": "Check the selected entities and display names. Up to four named power metrics are supported."
+      "invalid_dashboard": "Check selected entities and page visibility. Room controls support climate, light, and switch entities in up to four Home Assistant Areas, with at most five devices per Area. Configure no more than three additional AI providers; provider names must be unique and at most 8 characters, and each provider needs a session or weekly quota sensor. Configure no more than five named sensor rows with names up to 18 characters. The six rotation order slots must each contain a different page. Page and camera refresh intervals must be 10–120 seconds in 5-second steps."
     }
   },
   "issues": {
@@ -86,6 +107,23 @@
           "init": {
             "title": "Reload the CYD integration",
             "description": "After installing firmware with the update_dashboard action, continue to reload the selected ESPHome device.",
+            "data": {},
+            "submit": "Continue"
+          }
+        },
+        "abort": {
+          "reconfigure": "Device reconfiguration started.",
+          "entry_not_found": "The Project Cyder entry no longer exists."
+        }
+      }
+    },
+    "focus_page_action_unavailable": {
+      "title": "Alert page routing is unavailable for {device_name}",
+      "fix_flow": {
+        "step": {
+          "init": {
+            "title": "Update the CYD firmware",
+            "description": "The selected alert rules route to dashboard pages, but this device does not expose the focus_page action. Install matching CYD firmware and reload the Project Cyder entry.",
             "data": {},
             "submit": "Continue"
           }

@@ -80,6 +80,7 @@ class ServiceMapTests(unittest.TestCase):
 
         self.assertIsNotNone(result)
         self.assertIsNone(result.update_dashboard)
+        self.assertIsNone(result.focus_page)
 
     def test_recovers_missing_device_config_entries_from_esphome_entities(self) -> None:
         device = FakeDevice(set(), name="Desk HASS")
