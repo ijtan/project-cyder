@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 import math
 from collections.abc import Mapping
 from dataclasses import dataclass
@@ -17,6 +19,7 @@ from .const import (
     CONF_PRIORITY,
     CONF_THRESHOLD,
     CONF_TITLE,
+    CONF_WARNING_THRESHOLD,
 )
 
 DIRECTIONS = frozenset({"above", "below"})
@@ -36,6 +39,8 @@ class Rule:
     title: str
     message: str
     attention_page: str
+    warning_threshold: float | None
+    rule_id: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +51,10 @@ class AlertCommand:
     title: str
     message: str
     attention_page: str = "none"
+    rule_id: str = ""
+    actual: str = ""
+    limit: str = ""
+    source: str = ""
 
 
 def _finite_number(value: Any, field: str) -> float:
@@ -95,6 +104,20 @@ def validate_rules(values: Any) -> list[dict[str, Any]]:
             raise ValueError(f"Rule {index} has an invalid attention page")
 
         threshold = _finite_number(value.get(CONF_THRESHOLD), "threshold")
+        warning_value = value.get(CONF_WARNING_THRESHOLD)
+        warning_threshold = (
+            None
+            if warning_value in (None, "")
+            else _finite_number(warning_value, "warning threshold")
+        )
+        if warning_threshold is not None and (
+            warning_threshold >= threshold
+            if direction == "above"
+            else warning_threshold <= threshold
+        ):
+            raise ValueError(
+                "Warning threshold must be below an upper limit or above a lower limit"
+            )
         hysteresis = _finite_number(value.get(CONF_HYSTERESIS, 0), "hysteresis")
         if hysteresis < 0:
             raise ValueError(f"Rule {index} hysteresis cannot be negative")
@@ -104,6 +127,11 @@ def validate_rules(values: Any) -> list[dict[str, Any]]:
                 CONF_ENTITY_ID: entity_id.strip(),
                 CONF_DIRECTION: direction,
                 CONF_THRESHOLD: threshold,
+                **(
+                    {CONF_WARNING_THRESHOLD: warning_threshold}
+                    if warning_threshold is not None
+                    else {}
+                ),
                 CONF_HYSTERESIS: hysteresis,
                 CONF_PRIORITY: int(priority),
                 CONF_TITLE: title.strip(),
@@ -131,8 +159,15 @@ class RuleEngine:
     """Track rule hysteresis and select the highest-priority active alert."""
 
     def __init__(self, rules: Any) -> None:
-        self.rules = [Rule(**item) for item in validate_rules(rules)]
+        self.rules = []
+        for index, item in enumerate(validate_rules(rules)):
+            item.setdefault(CONF_WARNING_THRESHOLD, None)
+            identity = json.dumps(item, sort_keys=True, separators=(",", ":"))
+            rule_id = hashlib.sha1(f"{index}:{identity}".encode()).hexdigest()[:12]
+            self.rules.append(Rule(**item, rule_id=rule_id))
         self._active = [False] * len(self.rules)
+        self._latest: dict[str, tuple[float, str, str]] = {}
+        self._newly_cleared_rule_ids: list[str] = []
         self.current: AlertCommand | None = None
 
     @property
@@ -140,33 +175,69 @@ class RuleEngine:
         """Return the entities whose state changes this engine needs."""
         return {rule.entity_id for rule in self.rules}
 
-    def seed(self, states: Mapping[str, Any]) -> AlertCommand | None:
+    def seed(
+        self,
+        states: Mapping[str, Any],
+        units: Mapping[str, str] | None = None,
+        sources: Mapping[str, str] | None = None,
+    ) -> AlertCommand | None:
         """Evaluate all currently known states and return only the final alert."""
         for entity_id, state in states.items():
-            self._update_rules(entity_id, state)
+            self._update_rules(
+                entity_id,
+                state,
+                (units or {}).get(entity_id, ""),
+                (sources or {}).get(entity_id, entity_id),
+            )
         self.current = self._select_alert()
         return self.current
 
-    def update(self, entity_id: str, state: Any) -> tuple[bool, AlertCommand | None]:
+    def update(
+        self, entity_id: str, state: Any, unit: str = "", source: str = ""
+    ) -> tuple[bool, AlertCommand | None]:
         """Apply one state update; return whether the displayed alert changed."""
         before = self.current
-        if not self._update_rules(entity_id, state):
+        if not self._update_rules(entity_id, state, unit, source or entity_id):
             return False, before
         after = self._select_alert()
         self.current = after
         return after != before, after
 
-    def _update_rules(self, entity_id: str, state: Any) -> bool:
+    def take_cleared_rule_ids(self) -> list[str]:
+        """Return rule incidents that recovered since the last read."""
+        cleared = self._newly_cleared_rule_ids
+        self._newly_cleared_rule_ids = []
+        return cleared
+
+    def active_rule_ids(self) -> list[str]:
+        """Return every currently breached rule, including preempted alerts."""
+        return [
+            rule.rule_id
+            for rule, active in zip(self.rules, self._active, strict=True)
+            if active
+        ]
+
+    def rule_priority(self, rule_id: str) -> int:
+        """Return a rule's priority, or zero for an unknown incident ID."""
+        return next(
+            (rule.priority for rule in self.rules if rule.rule_id == rule_id), 0
+        )
+
+    def _update_rules(
+        self, entity_id: str, state: Any, unit: str = "", source: str = ""
+    ) -> bool:
         value = numeric_state(state)
         if value is None:
             # Unknown/unavailable/non-numeric states don't reset hysteresis.
             return False
+        self._latest[entity_id] = (value, unit, source or entity_id)
 
         matched = False
         for index, rule in enumerate(self.rules):
             if rule.entity_id != entity_id:
                 continue
             matched = True
+            was_active = self._active[index]
             if self._active[index]:
                 self._active[index] = (
                     value > rule.threshold - rule.hysteresis
@@ -179,6 +250,8 @@ class RuleEngine:
                     if rule.direction == "above"
                     else value < rule.threshold
                 )
+            if was_active and not self._active[index]:
+                self._newly_cleared_rule_ids.append(rule.rule_id)
         return matched
 
     def _select_alert(self) -> AlertCommand | None:
@@ -189,7 +262,71 @@ class RuleEngine:
         ):
             if self._active[index]:
                 rule = self.rules[index]
+                value, unit, source = self._latest.get(
+                    rule.entity_id, (0.0, "", rule.entity_id)
+                )
                 return AlertCommand(
-                    rule.priority, rule.title, rule.message, rule.attention_page
+                    priority=rule.priority,
+                    title=rule.title,
+                    message=rule.message,
+                    attention_page=rule.attention_page,
+                    rule_id=rule.rule_id,
+                    actual=_format_measurement(value, unit),
+                    limit=(
+                        f"> {_format_measurement(rule.threshold, unit)}"
+                        if rule.direction == "above"
+                        else f"< {_format_measurement(rule.threshold, unit)}"
+                    ),
+                    source=source,
                 )
         return None
+
+    def sensor_status(self, entity_id: str) -> int:
+        """Return 0 neutral, 1 safe, 2 nearing a limit, or 3 breached."""
+        current = self._latest.get(entity_id)
+        if current is None:
+            return 0
+        value, _unit, _source = current
+        matching = [
+            index
+            for index, rule in enumerate(self.rules)
+            if rule.entity_id == entity_id
+        ]
+        if not matching:
+            return 0
+        if any(self._active[index] for index in matching):
+            return 3
+        warning_rules = [
+            self.rules[index]
+            for index in matching
+            if self.rules[index].warning_threshold is not None
+        ]
+        if not warning_rules:
+            return 0
+        if any(
+            value >= rule.warning_threshold
+            if rule.direction == "above"
+            else value <= rule.warning_threshold
+            for rule in warning_rules
+        ):
+            return 2
+        return 1
+
+    def is_rule_active(self, rule_id: str) -> bool:
+        """Return whether the rule is still breached, including when preempted."""
+        return any(
+            active and rule.rule_id == rule_id
+            for rule, active in zip(self.rules, self._active, strict=True)
+        )
+
+
+def _format_measurement(value: float, unit: str) -> str:
+    """Format a compact numeric reading and retain its HA unit."""
+    number = f"{value:.2f}".rstrip("0").rstrip(".")
+    if number == "-0":
+        number = "0"
+    unit = unit.strip()
+    if not unit:
+        return number
+    separator = "" if unit.startswith("°") or unit == "%" else " "
+    return f"{number}{separator}{unit}"

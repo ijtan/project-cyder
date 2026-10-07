@@ -54,6 +54,7 @@ from custom_components.cyd_ha_monitor.const import (
     CONF_ROOM_ENTITIES,
     CONF_SENSOR_METRICS,
 )
+from custom_components.cyd_ha_monitor.alerts import RuleEngine
 from custom_components.cyd_ha_monitor.dashboard import (
     dashboard_action_data,
     dashboard_entities,
@@ -310,7 +311,7 @@ class RoomPayloadTests(unittest.TestCase):
         from custom_components.cyd_ha_monitor import dashboard
 
         class AreasRegistry:
-            def async_get(self, area_id: str):
+            def async_get_area(self, area_id: str):
                 name = {"living": "Living Room", "upstairs": "Upstairs"}.get(area_id)
                 return type("Area", (), {"name": name})() if name else None
 
@@ -789,6 +790,7 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertTrue(data["sensor_monitor_configured"])
         self.assertEqual(data["sensor_1_name"], "Living room")
         self.assertEqual(data["sensor_1_text"], "21.4 °C")
+        self.assertEqual(data["sensor_1_status"], 0)
         self.assertEqual(data["sensor_2_text"], "closed")
         self.assertEqual(data["sensor_3_text"], "Unavailable")
         self.assertTrue(data["sensor_4_enabled"])
@@ -805,6 +807,45 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertTrue(data["sensor_monitor_configured"])
         self.assertFalse(data["sensor_1_enabled"])
         self.assertFalse(data["sensor_5_enabled"])
+
+    def test_alert_rule_status_is_included_with_sensor_rows(self) -> None:
+        hass = FakeHass(
+            {"sensor.living_room": FakeState("26", {"unit_of_measurement": "°C"})}
+        )
+        options = validate_dashboard(
+            {
+                CONF_SENSOR_METRICS: [
+                    {
+                        CONF_METRIC_ENTITY_ID: "sensor.living_room",
+                        CONF_METRIC_NAME: "Living room",
+                    }
+                ]
+            }
+        )
+        engine = RuleEngine(
+            [
+                {
+                    "entity_id": "sensor.living_room",
+                    "direction": "above",
+                    "threshold": 30,
+                    "warning_threshold": 25,
+                    "hysteresis": 1,
+                    "priority": 2,
+                    "title": "Warm",
+                    "message": "Room is warm",
+                }
+            ]
+        )
+        engine.seed(
+            {"sensor.living_room": "26"}, {"sensor.living_room": "°C"}
+        )
+
+        self.assertEqual(
+            dashboard_action_data(hass, options, engine)["sensor_1_status"], 2
+        )
+
+        engine.update("sensor.living_room", "31", "°C")
+        self.assertEqual(engine.sensor_status("sensor.living_room"), 3)
 
     def test_remaining_is_not_calculated_from_different_units(self) -> None:
         hass = FakeHass(

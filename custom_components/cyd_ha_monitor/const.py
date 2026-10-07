@@ -1,7 +1,16 @@
-"""Constants for Project Cyder."""
+"""Constants for Project Cydex."""
 
 DOMAIN = "cyd_ha_monitor"
+LEGACY_ENTRY_TITLE_PREFIX = "Project Cyder - "
+ENTRY_TITLE_PREFIX = "Project Cydex - "
 ESPHOME_DOMAIN = "esphome"
+
+
+def migrate_entry_title(title: str) -> str:
+    """Update an automatically generated entry title from the former brand."""
+    if title.startswith(LEGACY_ENTRY_TITLE_PREFIX):
+        return ENTRY_TITLE_PREFIX + title[len(LEGACY_ENTRY_TITLE_PREFIX) :]
+    return title
 
 CONF_DEVICE_ID = "device_id"
 CONF_RULES = "rules"
@@ -50,6 +59,7 @@ CONF_CODEX_WEEK_ENTITY = "codex_week_entity"
 CONF_ENTITY_ID = "entity_id"
 CONF_DIRECTION = "direction"
 CONF_THRESHOLD = "threshold"
+CONF_WARNING_THRESHOLD = "warning_threshold"
 CONF_HYSTERESIS = "hysteresis"
 CONF_PRIORITY = "priority"
 CONF_TITLE = "title"

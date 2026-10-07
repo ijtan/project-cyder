@@ -22,8 +22,9 @@ def rule(
     title: str = "Warm",
     message: str = "Too warm",
     attention_page: str = "none",
+    warning_threshold: float | None = None,
 ) -> dict[str, object]:
-    return {
+    value = {
         "entity_id": entity_id,
         "direction": direction,
         "threshold": threshold,
@@ -33,6 +34,9 @@ def rule(
         "message": message,
         CONF_ATTENTION_PAGE: attention_page,
     }
+    if warning_threshold is not None:
+        value["warning_threshold"] = warning_threshold
+    return value
 
 
 class NumericStateTests(unittest.TestCase):
@@ -77,6 +81,7 @@ class RuleValidationTests(unittest.TestCase):
             {"hysteresis": -0.1},
             {"threshold": "nan"},
             {"attention_page": "unknown_page"},
+            {"warning_threshold": 21},
         ):
             with self.subTest(changes=changes), self.assertRaises(ValueError):
                 validate_rules([rule(**changes)])  # type: ignore[arg-type]
@@ -99,7 +104,10 @@ class RuleEngineTests(unittest.TestCase):
         self.assertEqual(alert.title if alert else None, "Warm")
         self.assertEqual(alert.attention_page if alert else None, "energy")
 
-        self.assertEqual(engine.update("sensor.temperature", "19"), (False, alert))
+        changed, updated = engine.update("sensor.temperature", "19")
+        self.assertTrue(changed)
+        self.assertEqual(updated.actual, "19")
+        self.assertEqual(updated.limit, "> 20")
         changed, alert = engine.update("sensor.temperature", "18")
         self.assertTrue(changed)
         self.assertIsNone(alert)
@@ -137,10 +145,14 @@ class RuleEngineTests(unittest.TestCase):
                 ),
             ]
         )
-        self.assertEqual(
-            engine.seed({"sensor.temperature": "21", "sensor.critical": "31"}).title,
-            "Critical",
+        seeded = engine.seed(
+            {"sensor.temperature": "21", "sensor.critical": "31"},
+            units={"sensor.critical": "°C"},
+            sources={"sensor.critical": "Boiler temperature"},
         )
+        self.assertEqual(seeded.title, "Critical")
+        self.assertEqual(seeded.source, "Boiler temperature")
+        self.assertEqual(seeded.actual, "31°C")
         self.assertEqual(engine.current.attention_page, "energy")
         changed, alert = engine.update("sensor.critical", "29")
         self.assertTrue(changed)
@@ -151,8 +163,71 @@ class RuleEngineTests(unittest.TestCase):
 
     def test_identical_selected_alert_is_deduplicated(self) -> None:
         engine = RuleEngine([rule()])
-        self.assertTrue(engine.update("sensor.temperature", "21")[0])
-        self.assertFalse(engine.update("sensor.temperature", "22")[0])
+        changed, first = engine.update(
+            "sensor.temperature", "21", "°C", "Freezer probe"
+        )
+        self.assertTrue(changed)
+        changed, updated = engine.update(
+            "sensor.temperature", "22", "°C", "Freezer probe"
+        )
+        self.assertTrue(changed)
+        self.assertEqual(first.rule_id, updated.rule_id)
+        self.assertEqual(updated.actual, "22°C")
+        self.assertEqual(updated.source, "Freezer probe")
+
+    def test_sensor_status_tracks_warning_breach_and_hysteresis(self) -> None:
+        engine = RuleEngine([rule(threshold=80, warning_threshold=60, hysteresis=2)])
+        self.assertEqual(engine.update("sensor.temperature", "59")[0], False)
+        self.assertEqual(engine.sensor_status("sensor.temperature"), 1)
+        engine.update("sensor.temperature", "60")
+        self.assertEqual(engine.sensor_status("sensor.temperature"), 2)
+        engine.update("sensor.temperature", "81")
+        self.assertEqual(engine.sensor_status("sensor.temperature"), 3)
+        engine.update("sensor.temperature", "79")
+        self.assertEqual(engine.sensor_status("sensor.temperature"), 3)
+        engine.update("sensor.temperature", "78")
+        self.assertEqual(engine.sensor_status("sensor.temperature"), 2)
+
+    def test_lower_limit_warning_band_runs_in_the_opposite_direction(self) -> None:
+        engine = RuleEngine(
+            [
+                rule(
+                    direction="below",
+                    threshold=5,
+                    warning_threshold=7,
+                    hysteresis=1,
+                )
+            ]
+        )
+        engine.update("sensor.temperature", "8")
+        self.assertEqual(engine.sensor_status("sensor.temperature"), 1)
+        engine.update("sensor.temperature", "7")
+        self.assertEqual(engine.sensor_status("sensor.temperature"), 2)
+        engine.update("sensor.temperature", "4")
+        self.assertEqual(engine.sensor_status("sensor.temperature"), 3)
+
+    def test_recovered_preempted_rule_is_reported_for_suppression_cleanup(self) -> None:
+        engine = RuleEngine(
+            [
+                rule(priority=1, threshold=20),
+                rule(
+                    entity_id="sensor.critical",
+                    threshold=30,
+                    priority=3,
+                    title="Critical",
+                ),
+            ]
+        )
+        engine.seed({"sensor.temperature": "21", "sensor.critical": "31"})
+        lower_rule_id = engine.rules[0].rule_id
+
+        changed, selected = engine.update("sensor.temperature", "18")
+
+        self.assertFalse(changed)
+        self.assertEqual(selected.title, "Critical")
+        self.assertEqual(engine.take_cleared_rule_ids(), [lower_rule_id])
+        self.assertEqual(engine.active_rule_ids(), [engine.rules[1].rule_id])
+        self.assertEqual(engine.take_cleared_rule_ids(), [])
 
     def test_seed_selects_once_from_all_current_states(self) -> None:
         engine = RuleEngine(

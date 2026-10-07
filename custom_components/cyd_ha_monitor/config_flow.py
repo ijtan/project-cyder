@@ -1,4 +1,4 @@
-"""Configuration and options flows for Project Cyder."""
+"""Configuration and options flows for Project Cydex."""
 
 from __future__ import annotations
 
@@ -69,7 +69,9 @@ from .const import (
     CONF_RULES,
     CONF_THRESHOLD,
     CONF_TITLE,
+    CONF_WARNING_THRESHOLD,
     DOMAIN,
+    ENTRY_TITLE_PREFIX,
     ISSUE_ACTIONS_UNAVAILABLE,
     ISSUE_DASHBOARD_ACTION_UNAVAILABLE,
 )
@@ -108,7 +110,12 @@ def _rules_selector() -> selector.ObjectSelector:
                 },
                 CONF_THRESHOLD: {
                     "required": True,
-                    "label": "Threshold",
+                    "label": "Limit (entity units)",
+                    "selector": selector.NumberSelector({"mode": "box", "step": "any"}),
+                },
+                CONF_WARNING_THRESHOLD: {
+                    "required": False,
+                    "label": "Warning starts at (optional, same units)",
                     "selector": selector.NumberSelector({"mode": "box", "step": "any"}),
                 },
                 CONF_HYSTERESIS: {
@@ -183,7 +190,7 @@ class CydHAMonitorConfigFlow(ConfigFlow, domain=DOMAIN):
             self._abort_if_unique_id_configured()
             title = _device_title(self.hass, device_id)
             return self.async_create_entry(
-                title=f"Project Cyder - {title}",
+                title=f"{ENTRY_TITLE_PREFIX}{title}",
                 data={CONF_DEVICE_ID: device_id},
             )
 

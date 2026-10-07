@@ -19,10 +19,22 @@ from custom_components.cyd_ha_monitor.const import (
     CONF_PROVIDER_SESSION_RESET_ENTITY,
     CONF_PROVIDER_WEEK_ENTITY,
     CONF_PROVIDER_WEEK_RESET_ENTITY,
+    migrate_entry_title,
 )
 
 
 _UNDEFINED = object()
+
+
+class EntryTitleMigrationTests(unittest.TestCase):
+    def test_renames_only_automatically_generated_legacy_title(self) -> None:
+        self.assertEqual(
+            migrate_entry_title("Project Cyder - Office CYD"),
+            "Project Cydex - Office CYD",
+        )
+        self.assertEqual(
+            migrate_entry_title("My custom display name"), "My custom display name"
+        )
 
 
 class _SchemaKey:

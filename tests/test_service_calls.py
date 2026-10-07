@@ -67,13 +67,19 @@ class ServiceCallTests(unittest.IsolatedAsyncioTestCase):
         )
         await services.first_call_started.wait()
         self.assertFalse(unload.done())
-        self.assertEqual(services.calls[0][1:], (names.clear_alert, {"priority": 2}))
+        self.assertEqual(
+            services.calls[0][1:],
+            (
+                names.clear_alert,
+                {"priority": 2, "rule_id": "", "incident_active": False},
+            ),
+        )
 
         services.release_first_call.set()
         self.assertTrue(await unload)
         self.assertNotIn(DOMAIN, hass.data)
 
-    async def test_replacement_clears_then_displays_non_dismissible_alert(self) -> None:
+    async def test_replacement_clears_then_displays_dismissible_alert(self) -> None:
         hass = FakeHass()
         names = service_names("living_room_cyd")
         runtime = Runtime(RuleEngine([]), names, "Living Room CYD")
@@ -88,7 +94,11 @@ class ServiceCallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             hass.services.calls,
             [
-                ("esphome", names.clear_alert, {"priority": 3}),
+                (
+                    "esphome",
+                    names.clear_alert,
+                    {"priority": 3, "rule_id": "", "incident_active": False},
+                ),
                 (
                     "esphome",
                     names.display_alert,
@@ -96,7 +106,11 @@ class ServiceCallTests(unittest.IsolatedAsyncioTestCase):
                         "priority": 2,
                         "title": "Warning",
                         "message": "New",
-                        "dismissible": False,
+                        "rule_id": "",
+                        "actual": "",
+                        "limit": "",
+                        "source": "",
+                        "dismissible": True,
                     },
                 ),
             ],
@@ -111,7 +125,7 @@ class ServiceCallTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(len(hass.services.calls), 1)
         self.assertEqual(hass.services.calls[0][0:2], ("esphome", names.display_alert))
-        self.assertFalse(hass.services.calls[0][2]["dismissible"])
+        self.assertTrue(hass.services.calls[0][2]["dismissible"])
 
     async def test_attention_page_routes_on_activation_and_restores_on_clear(self) -> None:
         hass = FakeHass()
@@ -133,11 +147,18 @@ class ServiceCallTests(unittest.IsolatedAsyncioTestCase):
                         "priority": 2,
                         "title": "Freezer",
                         "message": "Too warm",
-                        "dismissible": False,
+                        "rule_id": "",
+                        "actual": "",
+                        "limit": "",
+                        "source": "",
+                        "dismissible": True,
                     },
                 ),
                 (names.focus_page, {"page": "sensors"}),
-                (names.clear_alert, {"priority": 2}),
+                (
+                    names.clear_alert,
+                    {"priority": 2, "rule_id": "", "incident_active": False},
+                ),
                 (names.focus_page, {"page": "none"}),
             ],
         )
@@ -155,17 +176,98 @@ class ServiceCallTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(
             [(service, data) for _domain, service, data in hass.services.calls],
             [
-                (names.clear_alert, {"priority": 2}),
+                (
+                    names.clear_alert,
+                    {"priority": 2, "rule_id": "", "incident_active": False},
+                ),
                 (
                     names.display_alert,
                     {
                         "priority": 3,
                         "title": "Power",
                         "message": "Power high",
-                        "dismissible": False,
+                        "rule_id": "",
+                        "actual": "",
+                        "limit": "",
+                        "source": "",
+                        "dismissible": True,
                     },
                 ),
                 (names.focus_page, {"page": "energy"}),
+            ],
+        )
+
+    async def test_same_incident_refreshes_reading_without_clearing(self) -> None:
+        hass = FakeHass()
+        names = service_names("hallway_cyd")
+        runtime = Runtime(RuleEngine([]), names, "Hallway CYD")
+        previous = AlertCommand(
+            2, "Warm", "Too warm", "none", "rule-1", "21°C", "> 20°C"
+        )
+        current = AlertCommand(
+            2,
+            "Warm",
+            "Too warm",
+            "none",
+            "rule-1",
+            "22°C",
+            "> 20°C",
+            "Freezer probe",
+        )
+
+        _schedule_transition(hass, runtime, previous, current)
+        await asyncio.gather(*hass.tasks)
+
+        self.assertEqual(
+            [(service, data) for _domain, service, data in hass.services.calls],
+            [
+                (
+                    names.display_alert,
+                    {
+                        "priority": 2,
+                        "title": "Warm",
+                        "message": "Too warm",
+                        "rule_id": "rule-1",
+                        "actual": "22°C",
+                        "limit": "> 20°C",
+                        "source": "Freezer probe",
+                        "dismissible": True,
+                    },
+                )
+            ],
+        )
+
+    async def test_clears_acknowledgement_for_a_recovered_hidden_rule(self) -> None:
+        hass = FakeHass()
+        names = service_names("hallway_cyd")
+        engine = RuleEngine(
+            [
+                {
+                    "entity_id": "sensor.temperature",
+                    "direction": "above",
+                    "threshold": 20,
+                    "hysteresis": 1,
+                    "priority": 1,
+                    "title": "Warm",
+                    "message": "Too warm",
+                }
+            ]
+        )
+        engine.seed({"sensor.temperature": "21"})
+        rule_id = engine.rules[0].rule_id
+        runtime = Runtime(engine, names, "Hallway CYD")
+
+        _schedule_transition(hass, runtime, None, None, [rule_id])
+        await asyncio.gather(*hass.tasks)
+
+        self.assertEqual(
+            hass.services.calls,
+            [
+                (
+                    "esphome",
+                    names.clear_alert,
+                    {"priority": 1, "rule_id": rule_id, "incident_active": False},
+                )
             ],
         )
 

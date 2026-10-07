@@ -317,7 +317,11 @@ def _group_room_entities(hass: Any, entities: list[str]) -> list[dict[str, Any]]
             device = device_registry.async_get(entity_entry.device_id)
             area_id = getattr(device, "area_id", None)
         area_id = area_id or "unassigned"
-        area = area_registry.async_get(area_id) if area_id != "unassigned" else None
+        area = (
+            area_registry.async_get_area(area_id)
+            if area_id != "unassigned"
+            else None
+        )
         room = groups.setdefault(
             area_id,
             {
@@ -436,6 +440,7 @@ def dashboard_entities(options: Mapping[str, Any]) -> set[str]:
 def dashboard_action_data(
     hass: Any,
     options: Mapping[str, Any],
+    alert_engine: Any | None = None,
 ) -> dict[str, Any]:
     """Format selected HA states using the units expected by the display."""
     power_value, power_unit = _read_sensor(
@@ -545,6 +550,11 @@ def dashboard_action_data(
         payload[f"sensor_{index + 1}_enabled"] = bool(entity_id)
         payload[f"sensor_{index + 1}_name"] = name
         payload[f"sensor_{index + 1}_text"] = _monitor_sensor_text(hass, entity_id)
+        payload[f"sensor_{index + 1}_status"] = (
+            alert_engine.sensor_status(entity_id)
+            if entity_id and alert_engine is not None
+            else 0
+        )
 
     _add_percentage(payload, hass, "session", options.get(CONF_CLAUDE_SESSION_ENTITY))
     _add_percentage(payload, hass, "week", options.get(CONF_CLAUDE_WEEK_ENTITY))

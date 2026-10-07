@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-          "title": "Project Cyder",
+          "title": "Project Cydex",
         "description": "Select the ESPHome CYD device whose alert actions should be used.",
         "data": {
           "device_id": "ESPHome device"
@@ -17,7 +17,7 @@
       }
     },
     "error": {
-      "invalid_rules": "One or more alert rules are invalid. Check their entity, threshold, priority, title, message, and attention page."
+      "invalid_rules": "One or more alert rules are invalid. Check their entity, limit, optional warning threshold, priority, title, message, and attention page."
     },
     "abort": {
       "already_configured": "This ESPHome device is already configured.",
@@ -28,7 +28,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Project Cyder settings",
+        "title": "Project Cydex settings",
         "menu_options": {
           "dashboard": "Dashboard and usage",
           "alerts": "Alert rules"
@@ -72,7 +72,7 @@
       },
       "alerts": {
         "title": "Alert rules",
-        "description": "Add threshold rules. Comparisons are strict; hysteresis controls when an active rule clears. Optionally route an alert to a related dashboard page; it stays visible for 10 seconds after clearing unless touched, then the previous page returns.",
+        "description": "Add threshold rules using the sensor's own units. Warning thresholds optionally color sensor rows as they approach the limit. Comparisons are strict; hysteresis controls when a breached rule clears. On-device acknowledgement hides the incident until recovery; a 15-minute snooze resurfaces it if it remains active. Optionally route alerts to a related page; after clearing, it stays visible for 10 seconds unless touched, then the previous page returns.",
         "data": {
           "rules": "Threshold alert rules"
         }
@@ -96,7 +96,7 @@
         },
         "abort": {
           "reconfigure": "Device reconfiguration started.",
-          "entry_not_found": "The Project Cyder entry no longer exists."
+          "entry_not_found": "The Project Cydex entry no longer exists."
         }
       }
     },
@@ -113,7 +113,7 @@
         },
         "abort": {
           "reconfigure": "Device reconfiguration started.",
-          "entry_not_found": "The Project Cyder entry no longer exists."
+          "entry_not_found": "The Project Cydex entry no longer exists."
         }
       }
     },
@@ -123,14 +123,14 @@
         "step": {
           "init": {
             "title": "Update the CYD firmware",
-            "description": "The selected alert rules route to dashboard pages, but this device does not expose the focus_page action. Install matching CYD firmware and reload the Project Cyder entry.",
+            "description": "The selected alert rules route to dashboard pages, but this device does not expose the focus_page action. Install matching CYD firmware and reload the Project Cydex entry.",
             "data": {},
             "submit": "Continue"
           }
         },
         "abort": {
           "reconfigure": "Device reconfiguration started.",
-          "entry_not_found": "The Project Cyder entry no longer exists."
+          "entry_not_found": "The Project Cydex entry no longer exists."
         }
       }
     }

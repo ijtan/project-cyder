@@ -1,6 +1,6 @@
-# Project Cyder
+# Project Cydex
 
-Project Cyder configures dashboard sensors and priority alerts for an ESPHome
+Project Cydex configures dashboard sensors and priority alerts for an ESPHome
 CYD display from Home Assistant.
 
 ## Requirements
@@ -11,19 +11,25 @@ CYD display from Home Assistant.
   `focus_page` action.
 
 The firmware is installed separately. This repository does not include ESPHome
-YAML or install firmware. Install matching firmware before configuring dashboard
-features that extend the `update_dashboard` action; ordinary entity selections
-then stay in Home Assistant. Snapshot support also requires an HTTP(S) Home
-Assistant internal URL that the CYD can reach on the local network.
+YAML or install firmware. Install matching CYD firmware before using the updated
+alert payload (`rule_id`, live reading, limit, and incident-clear state) or
+dashboard status colors; older action schemas may reject the new fields. For
+upgrades, OTA the matching firmware first, then update/reload Project Cydex in
+Home Assistant. Ordinary entity selections then stay in HA. Snapshot support
+also requires an HTTP(S) Home Assistant internal URL that the CYD can reach on
+the local network.
 
 ## Current release
 
 Version 0.2.0 adds HA-configurable dashboard pages and entities to main/daily
 energy sensors, four named power metrics, Claude used/remaining display, and
 Notice, Warning, and Critical threshold alerts. Version 0.2.1 fixes empty
-optional entity selectors in the Dashboard and usage options form.
+optional entity selectors in the Dashboard and usage options form. Version 0.2.2
+rebrands the integration as Project Cydex, fixes current Home Assistant Area
+Registry lookups, and adds live alert readings, acknowledge/snooze controls, and
+optional warning bands for theme-aware sensor status colors.
 
-Select climate, light, and switch entities once; Project Cyder groups them by
+Select climate, light, and switch entities once; Project Cydex groups them by
 Home Assistant Area, with unassigned entities collected in **Unassigned**. The
 display supports up to four Areas and five selected devices per Area. A room
 opens a compact device list: thermostats open target/mode controls, while lights
@@ -42,21 +48,21 @@ touched; then the previous page resumes.
 
 1. Install and set up [HACS](https://www.hacs.xyz/docs/use/) if it is not
    already installed.
-2. Open Project Cyder in HACS with this button:
+2. Open Project Cydex in HACS with this button:
 
-[![Open Project Cyder in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ijtan&repository=project-cyder&category=integration)
+[![Open Project Cydex in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ijtan&repository=project-cyder&category=integration)
 
    This link opens the custom repository in HACS, so you do not need to add it
    manually first. If adding it manually, use `ijtan/project-cyder` and the
    **Integration** category.
-3. Download Project Cyder in HACS and restart Home Assistant.
+3. Download Project Cydex in HACS and restart Home Assistant.
 4. Install CYD firmware exposing the required actions.
 
 After installation, use this button to start setup in Home Assistant:
 
-[![Add Project Cyder to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start?domain=cyd_ha_monitor)
+[![Add Project Cydex to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start?domain=cyd_ha_monitor)
 
-You can also add **Project Cyder** from **Settings > Devices & services**.
+You can also add **Project Cydex** from **Settings > Devices & services**.
 Select the ESPHome display, then open its options.
 
 In **Dashboard and usage**, choose the main power and daily energy sensors,
@@ -83,7 +89,7 @@ For snapshots, select an optional Camera entity, enable its page, and choose a
 and has a small header shortcut; page-order slots determine the relative order of
 the five main dock destinations. The CYD fetches Home Assistant's camera-proxy
 JPEG only while the page is selected, then releases the image buffer when leaving. Configure HA's
-**Internal URL** to an address reachable by the CYD. Project Cyder sends the
+**Internal URL** to an address reachable by the CYD. Project Cydex sends the
 camera entity's rotating, short-lived proxy token to the device in RAM; it does
 not save that token or a long-lived HA credential in options. A camera may need
 to supply a small baseline JPEG for the CYD's decoder and memory limits. This
@@ -95,19 +101,23 @@ percentage sensors. Unavailable sensor states display as `--%` and suppress the
 corresponding progress bar. The compact AI page shows Claude plus up to three
 configured providers at once.
 
-In **Alert rules**, choose numeric entities, direction, threshold, hysteresis,
-priority, title, and message. Comparisons are strict; an active rule clears
-after its value crosses the threshold by the configured hysteresis. Invalid or
-unavailable states do not clear active alerts. The highest-priority active rule
-is shown: 1 for Notice, 2 for Warning, and 3 for Critical. The first configured
-rule wins ties. Each rule may focus a related dashboard page while its alert is
-active. Once cleared, that page stays visible for 10 seconds so there is time to
-inspect it, then the previously open page returns unless the screen is touched.
-Choose “Keep current page” to leave the display where it is.
+In **Alert rules**, choose numeric entities, direction, limit, optional warning
+threshold, hysteresis, priority, title, and message. Thresholds use the sensor's
+own units. Comparisons are strict; an active rule clears after its value crosses
+the limit by the configured hysteresis. Invalid or unavailable states do not
+clear active alerts. The optional warning threshold colors a matching sensor row
+amber as it approaches the limit; breached rows stay red even after the alert is
+acknowledged. Colors adapt to the selected display theme. The highest-priority
+active rule is shown: 1 for Notice, 2 for Warning, and 3 for Critical. The first
+configured rule wins ties. Each rule may focus a related dashboard page while
+its alert is active. Once cleared, that page stays visible for 10 seconds so
+there is time to inspect it, then the previously open page returns unless the
+screen is touched. Choose “Keep current page” to leave the display where it is.
 
-Alerts sent by Project Cyder cannot be dismissed on the display. They remain
-active until their rules clear because the firmware does not report touchscreen
-dismissals to Home Assistant.
+On the alert, **Ack until clear** hides that incident until its rule recovers;
+its sensor row remains red while breached. **Snooze 15 min** hides it temporarily
+and shows it again if it is still active. A different, higher-priority alert can
+still appear while an incident is acknowledged or snoozed.
 
 ## Roadmap
 
@@ -120,4 +130,4 @@ Report bugs at <https://github.com/ijtan/project-cyder/issues>.
 
 ## License
 
-Project Cyder is licensed under GPL-3.0-only. See [LICENSE](LICENSE).
+Project Cydex is licensed under GPL-3.0-only. See [LICENSE](LICENSE).

@@ -34,7 +34,7 @@ jobs:
 
           required = {"domain", "name", "codeowners", "config_flow", "dependencies", "documentation", "integration_type", "issue_tracker", "iot_class", "version"}
           assert required <= manifest.keys()
-          assert hacs["name"] == manifest["name"] == "Project Cyder"
+          assert hacs["name"] == manifest["name"] == "Project Cydex"
           assert strings == translation
           assert Path("LICENSE").is_file()
           PY

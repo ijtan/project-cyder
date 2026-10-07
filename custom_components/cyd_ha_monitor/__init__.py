@@ -1,4 +1,4 @@
-"""Project Cyder: dashboard updates and priority alerts for ESPHome CYDs."""
+"""Project Cydex: dashboard updates and priority alerts for ESPHome CYDs."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ from .const import (
     ISSUE_ACTIONS_UNAVAILABLE,
     ISSUE_DASHBOARD_ACTION_UNAVAILABLE,
     ISSUE_FOCUS_PAGE_ACTION_UNAVAILABLE,
+    migrate_entry_title,
 )
 from .service_map import ActionServices, async_get_device_action_services
 
@@ -49,6 +50,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     from homeassistant.core import callback
     from homeassistant.helpers import issue_registry as ir
     from homeassistant.helpers.event import async_track_state_change_event
+
+    migrated_title = migrate_entry_title(entry.title)
+    if migrated_title != entry.title:
+        hass.config_entries.async_update_entry(entry, title=migrated_title)
 
     resolved = async_get_device_action_services(hass, entry.data[CONF_DEVICE_ID])
     issue_id = f"{ISSUE_ACTIONS_UNAVAILABLE}_{entry.entry_id}"
@@ -153,10 +158,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entity_id = event.data["entity_id"]
         new_state = event.data.get("new_state")
         if new_state is not None and entity_id in engine.entities:
-            changed, current = engine.update(entity_id, new_state.state)
+            unit = new_state.attributes.get("unit_of_measurement", "")
+            source = new_state.attributes.get("friendly_name", entity_id)
+            changed, current = engine.update(
+                entity_id,
+                new_state.state,
+                unit if isinstance(unit, str) else "",
+                source if isinstance(source, str) and source.strip() else entity_id,
+            )
+            cleared_rule_ids = engine.take_cleared_rule_ids()
             if changed:
-                _schedule_transition(hass, runtime, runtime.current_command, current)
+                _schedule_transition(
+                    hass,
+                    runtime,
+                    runtime.current_command,
+                    current,
+                    cleared_rule_ids,
+                )
                 runtime.current_command = current
+            elif cleared_rule_ids:
+                _schedule_transition(
+                    hass, runtime, None, None, cleared_rule_ids
+                )
         if entity_id in selected_dashboard_entities:
             _schedule_dashboard_update(hass, runtime)
 
@@ -166,12 +189,21 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         entry.async_on_unload(unsubscribe)
 
-    current_states = {
-        entity_id: state.state
-        for entity_id in tracked_entities
-        if (state := hass.states.get(entity_id)) is not None
-    }
-    initial = engine.seed(current_states)
+    current_states: dict[str, str] = {}
+    current_units: dict[str, str] = {}
+    current_sources: dict[str, str] = {}
+    for entity_id in tracked_entities:
+        state = hass.states.get(entity_id)
+        if state is None:
+            continue
+        current_states[entity_id] = state.state
+        unit = state.attributes.get("unit_of_measurement", "")
+        current_units[entity_id] = unit if isinstance(unit, str) else ""
+        source = state.attributes.get("friendly_name", entity_id)
+        current_sources[entity_id] = (
+            source if isinstance(source, str) and source.strip() else entity_id
+        )
+    initial = engine.seed(current_states, current_units, current_sources)
     if initial is not None:
         _schedule_transition(hass, runtime, None, initial)
         runtime.current_command = initial
@@ -192,6 +224,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             runtime,
             runtime.current_command,
             None,
+            runtime.engine.active_rule_ids(),
         )
     if not hass.data.get(DOMAIN):
         hass.data.pop(DOMAIN, None)
@@ -208,9 +241,14 @@ def _schedule_transition(
     runtime: Runtime,
     previous: AlertCommand | None,
     current: AlertCommand | None,
+    cleared_rule_ids: list[str] | None = None,
 ) -> None:
     """Queue clear/replace calls without blocking HA's event listener."""
-    hass.async_create_task(_async_send_transition(hass, runtime, previous, current))
+    hass.async_create_task(
+        _async_send_transition(
+            hass, runtime, previous, current, cleared_rule_ids or []
+        )
+    )
 
 
 def _schedule_dashboard_update(hass: HomeAssistant, runtime: Runtime) -> None:
@@ -241,6 +279,7 @@ async def _async_send_dashboard_update(hass: HomeAssistant, runtime: Runtime) ->
                         **runtime.dashboard_options,
                         CONF_DASHBOARD_SETTINGS_SAVED: runtime.dashboard_settings_saved,
                     },
+                    runtime.engine,
                 ),
             )
         except asyncio.CancelledError:
@@ -257,6 +296,7 @@ async def _async_send_transition(
     runtime: Runtime,
     previous: AlertCommand | None,
     current: AlertCommand | None,
+    cleared_rule_ids: list[str] | None = None,
 ) -> None:
     """Serialize clear/replace service calls for one ESPHome device."""
 
@@ -272,10 +312,35 @@ async def _async_send_transition(
             )
 
     async with runtime.transition_lock:
-        if previous is not None:
+        cleared_ids = set(cleared_rule_ids or [])
+        same_incident = bool(
+            previous is not None
+            and current is not None
+            and current.rule_id
+            and previous.rule_id == current.rule_id
+        )
+        for rule_id in cleared_ids:
+            if previous is not None and previous.rule_id == rule_id:
+                continue
             await call_service(
                 runtime.service_names.clear_alert,
-                {"priority": previous.priority},
+                {
+                    "priority": runtime.engine.rule_priority(rule_id),
+                    "rule_id": rule_id,
+                    "incident_active": False,
+                },
+            )
+        if previous is not None and not same_incident:
+            await call_service(
+                runtime.service_names.clear_alert,
+                {
+                    "priority": previous.priority,
+                    "rule_id": previous.rule_id,
+                    "incident_active": (
+                        current is not None
+                        and runtime.engine.is_rule_active(previous.rule_id)
+                    ),
+                },
             )
         if current is not None:
             await call_service(
@@ -284,9 +349,11 @@ async def _async_send_transition(
                     "priority": current.priority,
                     "title": current.title,
                     "message": current.message,
-                    # HA cannot learn about touchscreen dismissals, so alerts
-                    # stay active until a sensor update clears them.
-                    "dismissible": False,
+                    "rule_id": current.rule_id,
+                    "actual": current.actual,
+                    "limit": current.limit,
+                    "source": current.source,
+                    "dismissible": True,
                 },
             )
         if runtime.service_names.focus_page is not None:
@@ -295,9 +362,11 @@ async def _async_send_transition(
                 if current is not None
                 else "none"
             )
-            if attention_page != "none" or (
-                previous is not None and previous.attention_page != "none"
-            ):
+            should_update_focus = not same_incident and (
+                attention_page != "none"
+                or (previous is not None and previous.attention_page != "none")
+            )
+            if should_update_focus:
                 await call_service(
                     runtime.service_names.focus_page,
                     {"page": attention_page},
