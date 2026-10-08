@@ -808,6 +808,72 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertFalse(data["sensor_1_enabled"])
         self.assertFalse(data["sensor_5_enabled"])
 
+    def test_saved_empty_dashboard_clears_values_without_native_fallback(self) -> None:
+        hass = FakeHass(
+            {
+                "sensor.old_power": FakeState("2500", {"unit_of_measurement": "W"}),
+                "sensor.old_energy": FakeState("12", {"unit_of_measurement": "kWh"}),
+                "sensor.old_usage": FakeState("75", {"unit_of_measurement": "%"}),
+            }
+        )
+        populated = validate_dashboard(
+            {
+                CONF_MAIN_POWER_ENTITY: "sensor.old_power",
+                CONF_DAILY_ENERGY_ENTITY: "sensor.old_energy",
+                CONF_CLAUDE_SESSION_ENTITY: "sensor.old_usage",
+            }
+        )
+        before = dashboard_action_data(hass, populated)
+        self.assertTrue(before["power_available"])
+        self.assertTrue(before["session_enabled"])
+
+        cleared = validate_dashboard({})
+        cleared[CONF_DASHBOARD_SETTINGS_SAVED] = True
+        after = dashboard_action_data(hass, cleared)
+        # These ownership flags must remain true even without selected entities:
+        # firmware then clears labels/hides widgets and blocks native callbacks.
+        self.assertTrue(after["power_configured"])
+        self.assertTrue(after["claude_configured"])
+        self.assertTrue(after["sensor_monitor_configured"])
+        self.assertFalse(after["power_available"])
+        self.assertEqual(after["power_kw"], 0.0)
+        self.assertEqual(after["power_text"], "--.-- kW")
+        self.assertEqual(after["energy_text"], "--.-- kWh")
+        for index in range(1, 5):
+            self.assertFalse(after[f"metric_{index}_enabled"])
+            self.assertEqual(after[f"metric_{index}_name"], "")
+        for index in range(1, 6):
+            self.assertFalse(after[f"sensor_{index}_enabled"])
+            self.assertEqual(after[f"sensor_{index}_name"], "")
+        for prefix in ("session", "week", "extra"):
+            self.assertFalse(after[f"{prefix}_enabled"])
+            self.assertFalse(after[f"{prefix}_bar_enabled"])
+        self.assertEqual(after["session_text"], "--%")
+        self.assertEqual(after["session_reset_epoch_minute"], -1)
+        self.assertEqual(after["week_reset_epoch_minute"], -1)
+        self.assertEqual(after["ai_provider_count"], 0)
+        self.assertFalse(after["climate_configured"])
+        self.assertEqual(after["climate_entity"], "")
+        self.assertEqual(json.loads(after["room_devices_json"]), {"rooms": []})
+        self.assertEqual(after["camera_snapshot_url"], "")
+        self.assertFalse(after["page_camera_enabled"])
+        self.assertEqual(set(before), set(after))
+
+    def test_clearing_power_preserves_separately_assigned_daily_energy(self) -> None:
+        hass = FakeHass(
+            {
+                "sensor.old_power": FakeState("2500", {"unit_of_measurement": "W"}),
+                "sensor.energy": FakeState("12", {"unit_of_measurement": "kWh"}),
+            }
+        )
+        options = validate_dashboard({CONF_DAILY_ENERGY_ENTITY: "sensor.energy"})
+        options[CONF_DASHBOARD_SETTINGS_SAVED] = True
+        data = dashboard_action_data(hass, options)
+        self.assertTrue(data["power_configured"])
+        self.assertFalse(data["power_available"])
+        self.assertEqual(data["power_text"], "--.-- kW")
+        self.assertEqual(data["energy_text"], "12.00 kWh")
+
     def test_alert_rule_status_is_included_with_sensor_rows(self) -> None:
         hass = FakeHass(
             {"sensor.living_room": FakeState("26", {"unit_of_measurement": "°C"})}

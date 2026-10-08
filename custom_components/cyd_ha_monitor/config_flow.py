@@ -323,7 +323,8 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
         schema[
             vol.Optional(
                 CONF_ROOM_ENTITIES,
-                default=values.get(CONF_ROOM_ENTITIES, []),
+                default=[],
+                description={"suggested_value": values.get(CONF_ROOM_ENTITIES, [])},
             )
         ] = _room_entities_selector()
         for field in (
@@ -340,8 +341,10 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
             CONF_CLAUDE_EXTRA_PERCENT_ENTITY,
         ):
             entity_default = _entity_selector_default(values.get(field))
+            # HA omits cleared optional selectors from the submitted mapping.
+            # A schema default would silently reinsert the old selection.
             field_key = (
-                vol.Optional(field, default=entity_default)
+                vol.Optional(field, description={"suggested_value": entity_default})
                 if entity_default is not None
                 else vol.Optional(field)
             )
@@ -417,7 +420,8 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
         schema[
             vol.Optional(
                 CONF_AI_PROVIDERS,
-                default=_ai_providers_default(values),
+                default=[],
+                description={"suggested_value": _ai_providers_default(values)},
             )
         ] = _ai_providers_selector()
         schema[
@@ -436,13 +440,15 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
         schema[
             vol.Optional(
                 CONF_POWER_METRICS,
-                default=values.get(CONF_POWER_METRICS, []),
+                default=[],
+                description={"suggested_value": values.get(CONF_POWER_METRICS, [])},
             )
         ] = _power_metrics_selector()
         schema[
             vol.Optional(
                 CONF_SENSOR_METRICS,
-                default=values.get(CONF_SENSOR_METRICS, []),
+                default=[],
+                description={"suggested_value": values.get(CONF_SENSOR_METRICS, [])},
             )
         ] = _sensor_metrics_selector()
         return vol.Schema(schema)

@@ -11,9 +11,9 @@ from .const import (
     ACTION_DISMISS_ALERT,
     ACTION_DISPLAY_ALERT,
     ACTION_FOCUS_PAGE,
-    ACTION_UPDATE_DASHBOARD,
     ESPHOME_DOMAIN,
 )
+from .dashboard_transport import DASHBOARD_ACTIONS
 
 _ACTION_NAMES = (ACTION_DISPLAY_ALERT, ACTION_CLEAR_ALERT, ACTION_DISMISS_ALERT)
 _DEVICE_NAME_KEYS = ("node_name", "device_name", "friendly_name", "name")
@@ -28,6 +28,7 @@ class ActionServices:
     dismiss_alert: str
     update_dashboard: str | None = None
     focus_page: str | None = None
+    dashboard_actions: tuple[str, ...] = ()
 
 
 def service_names(device_prefix: str) -> ActionServices:
@@ -36,8 +37,23 @@ def service_names(device_prefix: str) -> ActionServices:
         display_alert=f"{device_prefix}_{ACTION_DISPLAY_ALERT}",
         clear_alert=f"{device_prefix}_{ACTION_CLEAR_ALERT}",
         dismiss_alert=f"{device_prefix}_{ACTION_DISMISS_ALERT}",
-        update_dashboard=f"{device_prefix}_{ACTION_UPDATE_DASHBOARD}",
+        update_dashboard=f"{device_prefix}_{DASHBOARD_ACTIONS[0]}",
         focus_page=f"{device_prefix}_{ACTION_FOCUS_PAGE}",
+        dashboard_actions=tuple(f"{device_prefix}_{action}" for action in DASHBOARD_ACTIONS),
+    )
+
+
+def _registered_action_services(prefix: str, registered: Mapping[str, Any]) -> ActionServices:
+    """Require the complete bounded protocol; never fall back to update_dashboard."""
+    names = service_names(prefix)
+    supported = all(name in registered for name in names.dashboard_actions)
+    return ActionServices(
+        display_alert=names.display_alert,
+        clear_alert=names.clear_alert,
+        dismiss_alert=names.dismiss_alert,
+        update_dashboard=names.update_dashboard if supported else None,
+        focus_page=names.focus_page if names.focus_page in registered else None,
+        dashboard_actions=names.dashboard_actions if supported else (),
     )
 
 
@@ -139,22 +155,7 @@ def resolve_action_services(
     for candidate in candidates:
         prefix = candidate.replace("-", "_")
         if prefix in prefixes:
-            services = service_names(prefix)
-            return ActionServices(
-                display_alert=services.display_alert,
-                clear_alert=services.clear_alert,
-                dismiss_alert=services.dismiss_alert,
-                update_dashboard=(
-                    services.update_dashboard
-                    if services.update_dashboard in registered_services
-                    else None
-                ),
-                focus_page=(
-                    services.focus_page
-                    if services.focus_page in registered_services
-                    else None
-                ),
-            )
+            return _registered_action_services(prefix, registered_services)
 
     # Some core versions expose an edited display name in the DeviceEntry but
     # preserve the original node name in service metadata. Match only a prefix
@@ -172,21 +173,7 @@ def resolve_action_services(
         if all(
             _describes_device(description, candidates) for description in descriptions
         ):
-            return ActionServices(
-                display_alert=action_services.display_alert,
-                clear_alert=action_services.clear_alert,
-                dismiss_alert=action_services.dismiss_alert,
-                update_dashboard=(
-                    action_services.update_dashboard
-                    if action_services.update_dashboard in registered_services
-                    else None
-                ),
-                focus_page=(
-                    action_services.focus_page
-                    if action_services.focus_page in registered_services
-                    else None
-                ),
-            )
+            return _registered_action_services(prefix, registered_services)
     return None
 
 

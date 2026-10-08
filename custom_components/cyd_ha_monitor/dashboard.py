@@ -29,7 +29,6 @@ from .const import (
     CONF_CODEX_NAME,
     CONF_CODEX_SESSION_ENTITY,
     CONF_CODEX_WEEK_ENTITY,
-    CONF_DASHBOARD_SETTINGS_SAVED,
     CONF_DAILY_ENERGY_ENTITY,
     CONF_MAIN_POWER_ENTITY,
     CONF_METRIC_ENTITY_ID,
@@ -484,23 +483,11 @@ def dashboard_action_data(
         "camera_name": _camera_display_name(
             hass, options.get(CONF_CAMERA_ENTITY) if camera_page_enabled else None
         ),
-        "power_configured": bool(
-            options.get(CONF_MAIN_POWER_ENTITY)
-            or options.get(CONF_DAILY_ENERGY_ENTITY)
-            or metrics
-        ),
-        "claude_configured": any(
-            options.get(field)
-            for field in (
-                CONF_CLAUDE_SESSION_ENTITY,
-                CONF_CLAUDE_WEEK_ENTITY,
-                CONF_CLAUDE_SESSION_RESET_ENTITY,
-                CONF_CLAUDE_WEEK_RESET_ENTITY,
-                CONF_CLAUDE_EXTRA_USED_ENTITY,
-                CONF_CLAUDE_EXTRA_LIMIT_ENTITY,
-                CONF_CLAUDE_EXTRA_PERCENT_ENTITY,
-            )
-        ),
+        # Compatibility flags select API ownership in existing firmware. Every
+        # snapshot is authoritative, including empty/not-yet-saved selections.
+        # Availability/enabled flags below still describe the actual sources.
+        "power_configured": True,
+        "claude_configured": True,
         "ai_provider_count": len(options.get(CONF_AI_PROVIDERS, [])),
         "power_available": power_available,
         "power_kw": power_kw,
@@ -538,9 +525,7 @@ def dashboard_action_data(
         )
 
     sensor_metrics = options.get(CONF_SENSOR_METRICS, [])
-    payload["sensor_monitor_configured"] = bool(
-        sensor_metrics or options.get(CONF_DASHBOARD_SETTINGS_SAVED, False)
-    )
+    payload["sensor_monitor_configured"] = True
     for index in range(MAX_SENSOR_METRICS):
         metric = sensor_metrics[index] if index < len(sensor_metrics) else {}
         entity_id = (

@@ -6,6 +6,7 @@ import asyncio
 import unittest
 
 from custom_components.cyd_ha_monitor import Runtime, _schedule_dashboard_update
+from custom_components.cyd_ha_monitor import async_unload_entry
 from custom_components.cyd_ha_monitor.alerts import RuleEngine
 from custom_components.cyd_ha_monitor.const import (
     CONF_METRIC_ENTITY_ID,
@@ -15,6 +16,7 @@ from custom_components.cyd_ha_monitor.const import (
 )
 from custom_components.cyd_ha_monitor.dashboard import validate_dashboard
 from custom_components.cyd_ha_monitor.service_map import service_names
+from custom_components.cyd_ha_monitor.dashboard_transport import MAX_DASHBOARD_ARGUMENTS
 
 
 class FakeState:
@@ -39,7 +41,7 @@ class FakeServices:
         self.calls: list[tuple[str, str, dict[str, object]]] = []
 
     async def async_call(
-        self, domain: str, service: str, data: dict[str, object]
+        self, domain: str, service: str, data: dict[str, object], *, blocking: bool = False
     ) -> None:
         self.calls.append((domain, service, data))
 
@@ -84,8 +86,15 @@ class DashboardCallTests(unittest.IsolatedAsyncioTestCase):
         _schedule_dashboard_update(hass, runtime)
         await asyncio.gather(*hass.tasks)
 
+        self.assertEqual([call[1] for call in hass.services.calls], list(names.dashboard_actions))
+        self.assertTrue(all(len(call[2]) <= MAX_DASHBOARD_ARGUMENTS for call in hass.services.calls))
+        self.assertNotIn("desk_hass_update_dashboard", [call[1] for call in hass.services.calls])
+        # Preserve the original complete-snapshot assertion below while checking
+        # transport sends eight bounded messages rather than one giant action.
+        combined = {key: value for _, _, data in hass.services.calls for key, value in data.items()}
+
         self.assertEqual(
-            hass.services.calls,
+            [("esphome", names.update_dashboard, combined)],
             [
                 (
                     "esphome",
@@ -127,7 +136,7 @@ class DashboardCallTests(unittest.IsolatedAsyncioTestCase):
                         "climate_min_temp": -100.0,
                         "climate_max_temp": 100.0,
                         "room_devices_json": '{"rooms":[]}',
-                        "claude_configured": False,
+                        "claude_configured": True,
                         "power_available": True,
                         "power_kw": 0.75,
                         "power_text": "0.75 kW",
@@ -222,6 +231,78 @@ class DashboardCallTests(unittest.IsolatedAsyncioTestCase):
             ],
         )
         self.assertEqual(runtime.dashboard_update_scheduled, False)
+
+    async def test_changes_during_send_are_coalesced_into_latest_followup(self) -> None:
+        hass = FakeHass()
+        runtime = Runtime(
+            RuleEngine([]), service_names("desk_hass"), "Desk HASS",
+            dashboard_options=validate_dashboard({"main_power_entity": "sensor.main_power"}),
+        )
+        original_call = hass.services.async_call
+
+        async def change_during_send(domain, service, data, *, blocking=False):
+            await original_call(domain, service, data, blocking=blocking)
+            if len(hass.services.calls) == 1:
+                hass.states.values["sensor.main_power"] = FakeState("1200", "W")
+                for _ in range(5):
+                    _schedule_dashboard_update(hass, runtime)
+
+        hass.services.async_call = change_during_send
+        _schedule_dashboard_update(hass, runtime)
+        await asyncio.gather(*hass.tasks)
+        self.assertEqual(len(hass.tasks), 1)
+        self.assertEqual(len(hass.services.calls), 16)
+        energy_calls = [data for _, service, data in hass.services.calls if service.endswith("_energy")]
+        self.assertEqual([data["power_text"] for data in energy_calls], ["0.75 kW", "1.20 kW"])
+
+    async def test_disable_cancels_pending_updates(self) -> None:
+        hass = FakeHass()
+        runtime = Runtime(RuleEngine([]), service_names("desk_hass"), "Desk HASS")
+        hass.data = {DOMAIN: {"entry": runtime}}
+        _schedule_dashboard_update(hass, runtime)
+        await async_unload_entry(hass, type("Entry", (), {"entry_id": "entry"})())
+        self.assertEqual(hass.services.calls, [])
+        self.assertTrue(runtime.stopped)
+        _schedule_dashboard_update(hass, runtime)
+        self.assertEqual(len(hass.tasks), 1)
+
+    async def test_disable_mid_snapshot_stops_remaining_sections(self) -> None:
+        hass = FakeHass()
+        runtime = Runtime(RuleEngine([]), service_names("desk_hass"), "Desk HASS")
+        hass.data = {DOMAIN: {"entry": runtime}}
+        first_sent = asyncio.Event()
+        original_call = hass.services.async_call
+
+        async def signal_first(domain, service, data, *, blocking=False):
+            await original_call(domain, service, data, blocking=blocking)
+            first_sent.set()
+
+        hass.services.async_call = signal_first
+        _schedule_dashboard_update(hass, runtime)
+        await first_sent.wait()
+        await async_unload_entry(hass, type("Entry", (), {"entry_id": "entry"})())
+        self.assertEqual(len(hass.services.calls), 1)
+        self.assertFalse(runtime.dashboard_update_scheduled)
+        self.assertIsNone(runtime.dashboard_task)
+
+    async def test_failure_stops_batch_without_logging_payload_and_can_resync(self) -> None:
+        hass = FakeHass()
+        runtime = Runtime(RuleEngine([]), service_names("desk_hass"), "Desk HASS")
+        original_call = hass.services.async_call
+
+        async def fail_call(domain, service, data, *, blocking=False):
+            raise RuntimeError("private-camera-token")
+
+        hass.services.async_call = fail_call
+        with self.assertLogs("custom_components.cyd_ha_monitor", level="WARNING") as logs:
+            _schedule_dashboard_update(hass, runtime)
+            await asyncio.gather(*hass.tasks)
+        self.assertNotIn("private-camera-token", " ".join(logs.output))
+        self.assertFalse(runtime.dashboard_update_scheduled)
+        hass.services.async_call = original_call
+        _schedule_dashboard_update(hass, runtime)
+        await asyncio.gather(*hass.tasks)
+        self.assertEqual(len(hass.services.calls), 8)
 
     async def test_does_not_schedule_when_old_firmware_lacks_the_action(self) -> None:
         hass = FakeHass()

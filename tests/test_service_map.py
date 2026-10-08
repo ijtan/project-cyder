@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import unittest
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 
 from custom_components.cyd_ha_monitor.service_map import (
     _linked_esphome_config_entry_ids,
@@ -38,12 +38,23 @@ class FakeEntity:
     config_entry_id: str | None
 
 
+def registered_actions(names, description=""):
+    return {
+        name: FakeService(description)
+        for name in (
+            names.display_alert, names.clear_alert, names.dismiss_alert,
+            names.focus_page, *names.dashboard_actions,
+        )
+        if name is not None
+    }
+
+
 class ServiceMapTests(unittest.TestCase):
     def test_uses_selected_device_node_identifier_and_hyphen_replacement(self) -> None:
         names = service_names("monitor_node")
         device = FakeDevice({("esphome", "monitor-node")}, name="A user label")
         entry = FakeEntry("esphome", "A different title", {"node_name": "monitor-node"})
-        registered = {name: FakeService("") for name in asdict(names).values()}
+        registered = registered_actions(names)
 
         self.assertEqual(resolve_action_services(device, [entry], registered), names)
 
@@ -51,10 +62,7 @@ class ServiceMapTests(unittest.TestCase):
         names = service_names("cyd_node")
         device = FakeDevice({("esphome", "old-node-name")}, name="CYD Display")
         entry = FakeEntry("esphome", "CYD Display", {"device_name": "CYD Display"})
-        registered = {
-            name: FakeService("ESPHome action for CYD Display")
-            for name in asdict(names).values()
-        }
+        registered = registered_actions(names, "ESPHome action for CYD Display")
 
         self.assertEqual(resolve_action_services(device, [entry], registered), names)
 
@@ -62,7 +70,7 @@ class ServiceMapTests(unittest.TestCase):
         names = service_names("desk_hass")
         device = FakeDevice(set(), name="Desk HASS")
         entry = FakeEntry("esphome", "Desk HASS", {"device_name": "desk-hass"})
-        registered = {name: FakeService("") for name in asdict(names).values()}
+        registered = registered_actions(names)
 
         self.assertEqual(resolve_action_services(device, [entry], registered), names)
 
@@ -81,6 +89,19 @@ class ServiceMapTests(unittest.TestCase):
         self.assertIsNotNone(result)
         self.assertIsNone(result.update_dashboard)
         self.assertIsNone(result.focus_page)
+        self.assertEqual(result.dashboard_actions, ())
+
+    def test_refuses_legacy_or_incomplete_dashboard_protocol(self) -> None:
+        names = service_names("monitor_node")
+        device = FakeDevice({("esphome", "monitor-node")})
+        entry = FakeEntry("esphome", "Monitor", {"node_name": "monitor-node"})
+        registered = registered_actions(names)
+        registered.pop(names.dashboard_actions[-1])
+        registered["monitor_node_update_dashboard"] = FakeService("")
+        result = resolve_action_services(device, [entry], registered)
+        self.assertIsNotNone(result)
+        self.assertIsNone(result.update_dashboard)
+        self.assertEqual(result.dashboard_actions, ())
 
     def test_recovers_missing_device_config_entries_from_esphome_entities(self) -> None:
         device = FakeDevice(set(), name="Desk HASS")
@@ -110,7 +131,7 @@ class ServiceMapTests(unittest.TestCase):
         names = service_names("monitor_node")
         device = FakeDevice({("esphome", "monitor-node")})
         unrelated = FakeEntry("mqtt", "Monitor", {"node_name": "monitor-node"})
-        registered = {name: FakeService("") for name in asdict(names).values()}
+        registered = registered_actions(names)
         self.assertIsNone(resolve_action_services(device, [unrelated], registered))
 
 

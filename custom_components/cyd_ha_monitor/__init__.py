@@ -5,10 +5,16 @@ from __future__ import annotations
 import asyncio
 import logging
 from dataclasses import dataclass, field
+from datetime import timedelta
 from typing import TYPE_CHECKING, Any
 
 from .alerts import AlertCommand, RuleEngine
 from .dashboard import dashboard_action_data, dashboard_entities, validate_dashboard
+from .dashboard_transport import (
+    DASHBOARD_COALESCE_DELAY,
+    DASHBOARD_SECTION_DELAY,
+    dashboard_action_batches,
+)
 from .const import (
     CONF_ATTENTION_PAGE,
     CONF_DEVICE_ID,
@@ -43,13 +49,16 @@ class Runtime:
     dashboard_entities: set[str] = field(default_factory=set)
     dashboard_settings_saved: bool = False
     dashboard_update_scheduled: bool = False
+    dashboard_update_dirty: bool = False
+    dashboard_task: asyncio.Task[None] | None = None
+    stopped: bool = False
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Start observing the configured entities and sending alert actions."""
     from homeassistant.core import callback
     from homeassistant.helpers import issue_registry as ir
-    from homeassistant.helpers.event import async_track_state_change_event
+    from homeassistant.helpers.event import async_track_state_change_event, async_track_time_interval
 
     migrated_title = migrate_entry_title(entry.title)
     if migrated_title != entry.title:
@@ -131,7 +140,8 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
         _LOGGER.warning(
             "Dashboard sensors are configured for %s, but its ESPHome firmware "
-            "does not expose the update_dashboard action. Update the CYD firmware "
+            "does not expose all eight bounded update_dashboard_* actions. "
+            "The legacy 126-argument action is deliberately not used. Update the CYD firmware "
             "and reload this integration entry.",
             entry.title,
         )
@@ -207,10 +217,18 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     if initial is not None:
         _schedule_transition(hass, runtime, None, initial)
         runtime.current_command = initial
-    if (
-        runtime.dashboard_settings_saved or selected_dashboard_entities
-    ) and action_services.update_dashboard is not None:
+    if action_services.dashboard_actions:
         _schedule_dashboard_update(hass, runtime)
+
+        @callback
+        def refresh_dashboard(_now: Any) -> None:
+            # Recover after a brief device disconnect even when entity states
+            # have not changed. This is bounded/paced, not a retry loop.
+            _schedule_dashboard_update(hass, runtime)
+
+        entry.async_on_unload(async_track_time_interval(
+            hass, refresh_dashboard, timedelta(seconds=30)
+        ))
 
     return True
 
@@ -218,6 +236,16 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
 async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     """Stop listeners and clear this integration's currently shown alert."""
     runtime: Runtime | None = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
+    if runtime is not None:
+        runtime.stopped = True
+        if runtime.dashboard_task is not None:
+            runtime.dashboard_task.cancel()
+            try:
+                await runtime.dashboard_task
+            except asyncio.CancelledError:
+                pass
+            runtime.dashboard_task = None
+            runtime.dashboard_update_scheduled = False
     if runtime is not None and runtime.current_command is not None:
         await _async_send_transition(
             hass,
@@ -253,42 +281,56 @@ def _schedule_transition(
 
 def _schedule_dashboard_update(hass: HomeAssistant, runtime: Runtime) -> None:
     """Coalesce rapid sensor changes into one latest-state display update."""
-    if (
-        runtime.dashboard_update_scheduled
-        or runtime.service_names.update_dashboard is None
-    ):
+    if runtime.stopped or not runtime.service_names.dashboard_actions:
+        return
+    if runtime.dashboard_update_scheduled:
+        runtime.dashboard_update_dirty = True
         return
     runtime.dashboard_update_scheduled = True
-    hass.async_create_task(_async_send_dashboard_update(hass, runtime))
+    runtime.dashboard_task = hass.async_create_task(_async_send_dashboard_update(hass, runtime))
 
 
 async def _async_send_dashboard_update(hass: HomeAssistant, runtime: Runtime) -> None:
-    """Push a formatted snapshot of the configured dashboard sensors."""
-    service = runtime.service_names.update_dashboard
-    if service is None:
-        return
-    async with runtime.transition_lock:
-        runtime.dashboard_update_scheduled = False
-        try:
-            await hass.services.async_call(
-                ESPHOME_DOMAIN,
-                service,
-                dashboard_action_data(
+    """Send one small section at a time; coalesce changes without losing the last."""
+    action = "snapshot"
+    try:
+        while not runtime.stopped:
+            await asyncio.sleep(DASHBOARD_COALESCE_DELAY)
+            async with runtime.transition_lock:
+                if runtime.stopped:
+                    return
+                runtime.dashboard_update_dirty = False
+                batches = dashboard_action_batches(dashboard_action_data(
                     hass,
-                    {
-                        **runtime.dashboard_options,
-                        CONF_DASHBOARD_SETTINGS_SAVED: runtime.dashboard_settings_saved,
-                    },
+                    runtime.dashboard_options,
                     runtime.engine,
-                ),
-            )
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            _LOGGER.exception(
-                "Could not update dashboard metrics on ESPHome device %s",
-                runtime.device_name,
-            )
+                ))
+                for index, ((action, data), service) in enumerate(
+                    zip(batches, runtime.service_names.dashboard_actions, strict=True)
+                ):
+                    if runtime.stopped:
+                        return
+                    _LOGGER.debug("Dashboard section %s: %d arguments", action, len(data))
+                    await hass.services.async_call(ESPHOME_DOMAIN, service, data, blocking=True)
+                    if index + 1 < len(batches):
+                        await asyncio.sleep(DASHBOARD_SECTION_DELAY)
+            if not runtime.dashboard_update_dirty:
+                break
+    except asyncio.CancelledError:
+        raise
+    except Exception as err:
+        # Never retry in a tight loop during an API disconnect/panic. A later
+        # entity event or integration reload sends a fresh complete snapshot.
+        # Exceptions from HA may contain the complete service data (including a
+        # camera token). Log the section/error class, never the payload/message.
+        _LOGGER.warning(
+            "Dashboard update failed for %s: section=%s error_type=%s; "
+            "a later event or 30-second refresh will send a full snapshot",
+            runtime.device_name, action, type(err).__name__,
+        )
+    finally:
+        runtime.dashboard_update_scheduled = False
+        runtime.dashboard_task = None
 
 
 async def _async_send_transition(

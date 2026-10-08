@@ -106,7 +106,7 @@
         "step": {
           "init": {
             "title": "Reload the CYD integration",
-            "description": "After installing firmware with the update_dashboard action, continue to reload the selected ESPHome device.",
+            "description": "Install matching firmware with all eight bounded update_dashboard_* actions, then continue to reload the selected ESPHome device. The legacy oversized update_dashboard action is not used.",
             "data": {},
             "submit": "Continue"
           }

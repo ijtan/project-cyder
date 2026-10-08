@@ -6,20 +6,36 @@ CYD display from Home Assistant.
 ## Requirements
 
 - Home Assistant with HACS installed.
-- CYD firmware exposing `display_alert`, `clear_alert`, `dismiss_alert`, and
-  `update_dashboard` ESPHome actions. Rules that route attention also need the
-  `focus_page` action.
+- CYD firmware exposing `display_alert`, `clear_alert`, `dismiss_alert`, and all
+  eight bounded dashboard actions: `update_dashboard_layout`, `_controls`,
+  `_sensors`, `_energy`, `_claude`, `_provider_1`, `_provider_2`, and `_provider_3`
+  (each name starts with `update_dashboard`). Attention routing also needs `focus_page`.
 
 The firmware is installed separately. This repository does not include ESPHome
 YAML or install firmware. Install matching CYD firmware before using the updated
 alert payload (`rule_id`, live reading, limit, and incident-clear state) or
 dashboard status colors; older action schemas may reject the new fields. For
-upgrades, OTA the matching firmware first, then update/reload Project Cydex in
-Home Assistant. Ordinary entity selections then stay in HA. Snapshot support
+upgrades, keep Project Cydex disabled while installing the integration and matching
+firmware; confirm the new firmware boots and HA discovers all eight actions before
+enabling/reloading it. Version 0.2.3 deliberately refuses the legacy oversized
+`update_dashboard` action. Ordinary entity selections then stay in HA. Snapshot support
 also requires an HTTP(S) Home Assistant internal URL that the CYD can reach on
 the local network.
 
 ## Current release
+
+**Version 0.2.3** fixes cleared options returning after Submit and makes empty
+selections authoritative. Dashboard transport now uses eight sequential actions
+with at most 21 arguments each, rather than one 126-argument request. Calls are
+paced 100 ms apart, rapid changes are coalesced, pending updates are cancelled
+on unload/disable, and a 30-second refresh resynchronizes after a disconnect.
+Failure logs contain section/error class, not payloads or camera tokens.
+
+This is a targeted mitigation for an observed ESP32 API argument-allocation
+panic, **not an upstream-prescribed best practice or a proven on-device fix**.
+Local tests pass; physical runtime validation is still pending at publication.
+Sections apply separately: a disconnect can leave a partial dashboard until the
+next full refresh. Keep USB logs open for initial enable/reconnect testing.
 
 Version 0.2.0 adds HA-configurable dashboard pages and entities to main/daily
 energy sensors, four named power metrics, Claude used/remaining display, and
@@ -83,6 +99,14 @@ and Celsius/Fahrenheit unit. Main power is converted to kW, daily energy to kWh,
 and additional power metrics to W when their HA units are recognized. Choose
 whether extra Claude usage shows credits used or remaining. Remaining is the
 configured limit minus used credits.
+
+Clear an optional source with **×**, then **Submit** to remove it. Saved selections
+are suggestions, not defaults that can restore removed entities. Each dashboard
+snapshot is authoritative: unassigned sources send placeholders/disabled rows,
+not old readings or firmware-selected sensors. Removing the main power source
+clears its reading and hides the graph; a separately assigned daily-energy source
+continues to display. Matching extension-owned firmware also starts unassigned
+and contains no native HA sensor fallback subscriptions.
 
 For snapshots, select an optional Camera entity, enable its page, and choose a
 10–120 second refresh interval. Camera is an optional sixth rotation destination
