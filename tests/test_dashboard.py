@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import json
 import sys
 from types import ModuleType
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
 from custom_components.cyd_ha_monitor.const import (
     CONF_AI_PROVIDERS,
@@ -538,8 +538,8 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(data["camera_refresh_interval_seconds"], 45)
         self.assertEqual(
             data["camera_snapshot_url"],
-            "http://homeassistant.local:8123/api/camera_proxy/camera.driveway"
-            "?token=rotating-token&width=256&height=144",
+            "http://homeassistant.local:8123/api/cyd_ha_monitor/camera_thumbnail/camera.driveway"
+            "?token=rotating-token",
         )
         self.assertEqual(data["camera_name"], "Driveway camera")
         self.assertEqual(
@@ -702,6 +702,52 @@ class DashboardFormattingTests(unittest.TestCase):
         self.assertEqual(data["camera_snapshot_url"], "")
         self.assertEqual(data["camera_name"], "CAMERA")
         self.assertNotIn("rotating-token", repr(data))
+
+    def test_camera_uses_automatically_detected_local_url(self) -> None:
+        hass = FakeHass({"camera.driveway": FakeState("idle", {"access_token": "token+/="})})
+        options = validate_dashboard({CONF_CAMERA_ENTITY: "camera.driveway"})
+        network = ModuleType("homeassistant.helpers.network")
+        network.NoURLAvailableError = type("NoURLAvailableError", (Exception,), {})
+        network.get_url = Mock(return_value="http://192.0.2.10:8123/base")
+        with patch.dict(sys.modules, {"homeassistant.helpers.network": network}):
+            data = dashboard_action_data(hass, options)
+        network.get_url.assert_called_once_with(
+            hass, allow_internal=True, allow_external=False, allow_cloud=False,
+            allow_ip=True, prefer_external=False,
+        )
+        self.assertEqual(data["camera_snapshot_url"],
+                         "http://192.0.2.10:8123/base/api/cyd_ha_monitor/camera_thumbnail/camera.driveway"
+                         "?token=token%2B%2F%3D")
+        self.assertIsNone(hass.config.internal_url)
+        self.assertNotIn("token+/=", repr(options))
+
+    def test_camera_handles_missing_or_unsafe_detected_url(self) -> None:
+        hass = FakeHass({"camera.driveway": FakeState("idle", {"access_token": "secret"})})
+        options = validate_dashboard({CONF_CAMERA_ENTITY: "camera.driveway"})
+        network = ModuleType("homeassistant.helpers.network")
+        network.NoURLAvailableError = type("NoURLAvailableError", (Exception,), {})
+        network.get_url = Mock(side_effect=network.NoURLAvailableError)
+        with patch.dict(sys.modules, {"homeassistant.helpers.network": network}):
+            self.assertEqual(dashboard_action_data(hass, options)["camera_snapshot_url"], "")
+            network.get_url.side_effect = None
+            for url in ("http://user:password@ha.local:8123", "http://ha.local:8123/?secret=1",
+                        "http://ha.local:8123/#fragment", "ftp://ha.local", "", None):
+                with self.subTest(url=url):
+                    network.get_url.return_value = url
+                    self.assertEqual(dashboard_action_data(hass, options)["camera_snapshot_url"], "")
+
+    def test_camera_does_not_discover_url_for_hidden_page_or_missing_token(self) -> None:
+        hass = FakeHass({"camera.driveway": FakeState("idle", {})})
+        network = ModuleType("homeassistant.helpers.network")
+        network.NoURLAvailableError = type("NoURLAvailableError", (Exception,), {})
+        network.get_url = Mock()
+        with patch.dict(sys.modules, {"homeassistant.helpers.network": network}):
+            options = validate_dashboard({CONF_CAMERA_ENTITY: "camera.driveway"})
+            self.assertEqual(dashboard_action_data(hass, options)["camera_snapshot_url"], "")
+            hass.states.values["camera.driveway"].attributes["access_token"] = "secret"
+            options[CONF_SHOW_CAMERA_PAGE] = False
+            self.assertEqual(dashboard_action_data(hass, options)["camera_snapshot_url"], "")
+        network.get_url.assert_not_called()
 
     def test_unavailable_provider_quota_is_not_rendered_as_a_real_percentage(self) -> None:
         hass = FakeHass(

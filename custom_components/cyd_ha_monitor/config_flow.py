@@ -308,7 +308,13 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
     @staticmethod
     def _rules_schema(rules: list[dict[str, Any]] | None = None) -> vol.Schema:
         rules = [
-            {**rule, CONF_ATTENTION_PAGE: rule.get(CONF_ATTENTION_PAGE, "none")}
+            {
+                **rule,
+                # The rule engine stores integers; HA select options are strings.
+                # Convert only the form copy so reopening an unchanged rule saves.
+                CONF_PRIORITY: str(rule.get(CONF_PRIORITY, 2)),
+                CONF_ATTENTION_PAGE: rule.get(CONF_ATTENTION_PAGE, "none"),
+            }
             for rule in (rules or [])
             if isinstance(rule, dict)
         ]

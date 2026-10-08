@@ -711,8 +711,29 @@ def _camera_snapshot_url(hass: Any, entity_id: Any) -> str:
         return ""
     state = hass.states.get(entity_id)
     token = state.attributes.get("access_token") if state is not None else None
+    if not isinstance(token, str) or not token:
+        return ""
     internal_url = getattr(getattr(hass, "config", None), "internal_url", None)
-    if not isinstance(token, str) or not token or not isinstance(internal_url, str):
+    if not isinstance(internal_url, str) or not internal_url:
+        # Explicit internal_url is optional in HA. Resolve the automatically
+        # detected LAN URL, never an external/cloud fallback carrying the token.
+        # Keep the import lazy: the pure payload module is also used offline.
+        try:
+            from homeassistant.helpers.network import NoURLAvailableError, get_url
+        except ImportError:
+            return ""
+        try:
+            internal_url = get_url(
+                hass,
+                allow_internal=True,
+                allow_external=False,
+                allow_cloud=False,
+                allow_ip=True,
+                prefer_external=False,
+            )
+        except NoURLAvailableError:
+            return ""
+    if not isinstance(internal_url, str):
         return ""
     try:
         parsed = urlsplit(internal_url)
@@ -729,8 +750,8 @@ def _camera_snapshot_url(hass: Any, entity_id: Any) -> str:
         return ""
 
     base_path = parsed.path.rstrip("/")
-    proxy_path = f"{base_path}/api/camera_proxy/{entity_id}"
-    query = urlencode({"token": token, "width": 256, "height": 144})
+    proxy_path = f"{base_path}/api/cyd_ha_monitor/camera_thumbnail/{entity_id}"
+    query = urlencode({"token": token})
     return urlunsplit((parsed.scheme, parsed.netloc, proxy_path, query, ""))
 
 

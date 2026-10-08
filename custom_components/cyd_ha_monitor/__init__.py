@@ -36,6 +36,14 @@ if TYPE_CHECKING:
 _LOGGER = logging.getLogger(__name__)
 
 
+async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
+    """Register the camera-token-authenticated bounded thumbnail endpoint once."""
+    from .camera_thumbnail import async_setup_thumbnails
+
+    await async_setup_thumbnails(hass)
+    return True
+
+
 @dataclass(slots=True)
 class Runtime:
     """Runtime state for one configured CYD."""
@@ -256,6 +264,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     if not hass.data.get(DOMAIN):
         hass.data.pop(DOMAIN, None)
+    from .camera_thumbnail import STORE_KEY, selected_cameras
+
+    if (store := hass.data.get(STORE_KEY)) is not None:
+        await store.prune(selected_cameras(hass))
     return True
 
 
@@ -415,4 +427,4 @@ async def _async_send_transition(
                 )
 
 
-__all__ = ["async_setup_entry", "async_unload_entry"]
+__all__ = ["async_setup", "async_setup_entry", "async_unload_entry"]

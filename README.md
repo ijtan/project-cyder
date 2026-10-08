@@ -5,7 +5,8 @@ CYD display from Home Assistant.
 
 ## Requirements
 
-- Home Assistant with HACS installed.
+- Home Assistant 2026.10.0 or newer with HACS installed (v0.2.4's native camera
+  authentication/view path is validated against 2026.10.0).
 - CYD firmware exposing `display_alert`, `clear_alert`, `dismiss_alert`, and all
   eight bounded dashboard actions: `update_dashboard_layout`, `_controls`,
   `_sensors`, `_energy`, `_claude`, `_provider_1`, `_provider_2`, and `_provider_3`
@@ -24,12 +25,23 @@ the local network.
 
 ## Current release
 
-**Version 0.2.3** fixes cleared options returning after Submit and makes empty
+**Version 0.2.4** fixes alert priority dropdowns after reopening saved rules,
+uses automatically detected local HA URLs, and adds a bounded colour camera
+thumbnail endpoint. Install matching `qoi_v1` firmware before updating/enabling
+camera downloads. Physical camera validation remains pending at publication.
+
+Version 0.2.3 fixes cleared options returning after Submit and makes empty
 selections authoritative. Dashboard transport now uses eight sequential actions
 with at most 21 arguments each, rather than one 126-argument request. Calls are
 paced 100 ms apart, rapid changes are coalesced, pending updates are cancelled
 on unload/disable, and a 30-second refresh resynchronizes after a disconnect.
 Failure logs contain section/error class, not payloads or camera tokens.
+
+Alert form defaults convert saved numeric
+priorities to the strings required by HA's dropdown, while stored/runtime
+priorities remain integers. Camera links resolve an automatically detected local
+HA URL when the explicit internal URL is empty. The camera path needs matching
+`qoi_v1` firmware; the integration alone cannot correct the old decoded-image budget.
 
 This is a targeted mitigation for an observed ESP32 API argument-allocation
 panic, **not an upstream-prescribed best practice or a proven on-device fix**.
@@ -111,14 +123,35 @@ and contains no native HA sensor fallback subscriptions.
 For snapshots, select an optional Camera entity, enable its page, and choose a
 10–120 second refresh interval. Camera is an optional sixth rotation destination
 and has a small header shortcut; page-order slots determine the relative order of
-the five main dock destinations. The CYD fetches Home Assistant's camera-proxy
-JPEG only while the page is selected, then releases the image buffer when leaving. Configure HA's
-**Internal URL** to an address reachable by the CYD. Project Cydex sends the
+the five main dock destinations. The CYD fetches a bounded HA-generated colour
+thumbnail only while the page is selected, then releases the image buffer when leaving.
+Cydex uses HA's automatically detected internal URL when no explicit
+**Internal URL** is set; it never falls back to an external/cloud URL.
+An explicit internal URL, if set, must be reachable by the CYD. Project Cydex sends the
 camera entity's rotating, short-lived proxy token to the device in RAM; it does
-not save that token or a long-lived HA credential in options. A camera may need
-to supply a small baseline JPEG for the CYD's decoder and memory limits. This
+not save that token or a long-lived HA credential in options. HA decodes the source
+snapshot (including baseline/progressive JPEG or PNG), preserves its aspect ratio,
+and sends a letterboxed **128×72 QOI** thumbnail. This uses 18,432 bytes of
+decoded RGB565 pixels and a 2,048-byte streaming receive buffer on matching
+firmware, without a full compressed JPEG buffer. The endpoint inherits HA camera
+authentication and allows only cameras selected by enabled Cydex entries.
+Only one acquisition runs at a time; requests return a cached thumbnail or
+immediate 503 while a background acquisition runs. Acquisitions are throttled to
+at least ten seconds apart per camera, cached frames expire after sixty seconds, and
+caches/tasks are dropped when no entry selects them. Sources are bounded to
+4 MiB/12 million pixels; responses to the CYD are at most 36,886 bytes, decoded
+incrementally. Slow/offline cameras may still fail. This
 snapshot path is not live video, and should be hardware-tested before relying on
 it.
+
+**Known camera limit on firmware `918c9f0c`:** its 256×144 RGB565 frame needs up to
+72 KiB of decoded-image RAM, exceeding observed free heap before decoder overhead.
+Use corrected `qoi_v1` firmware before installing v0.2.4 and attempting downloads.
+Matching firmware rejects old direct-JPEG links, preallocates the thumbnail only
+with at least 48 KiB free/24 KiB largest block (larger allowances for HTTPS),
+closes stalled downloads, and performs only two faster ten-second retries before
+returning to the configured refresh interval. Labels describe receipt time, not
+the camera's capture time: a served frame may already be up to sixty seconds old.
 
 Each additional provider card accepts optional session and weekly quota
 percentage sensors. Unavailable sensor states display as `--%` and suppress the

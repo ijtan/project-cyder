@@ -27,6 +27,7 @@ from custom_components.cyd_ha_monitor.const import (
     CONF_SENSOR_METRICS,
     CONF_ROOM_ENTITIES,
     CONF_RULES,
+    CONF_PRIORITY,
     CONF_PROVIDER_NAME,
     CONF_PROVIDER_SESSION_ENTITY,
     CONF_PROVIDER_SESSION_RESET_ENTITY,
@@ -139,6 +140,40 @@ def _load_config_flow():
 
 
 class DashboardFormDefaultTests(unittest.TestCase):
+    def test_alert_form_priorities_are_strings_without_mutating_saved_rules(self) -> None:
+        config_flow = _load_config_flow()
+        for priority in (1, 2, 3, "2"):
+            rules = [{"entity_id": "sensor.power", CONF_PRIORITY: priority}]
+            schema = config_flow.CydHAMonitorOptionsFlow._rules_schema(rules)
+            field = next(key for key in schema.schema if key.name == CONF_RULES)
+            self.assertEqual(field.default[0][CONF_PRIORITY], str(priority))
+            self.assertEqual(rules[0][CONF_PRIORITY], priority)
+        schema = config_flow.CydHAMonitorOptionsFlow._rules_schema([{"entity_id": "sensor.power"}])
+        field = next(key for key in schema.schema if key.name == CONF_RULES)
+        self.assertEqual(field.default[0][CONF_PRIORITY], "2")
+
+    def test_alert_save_reopen_save_keeps_engine_priorities_numeric(self) -> None:
+        config_flow = _load_config_flow()
+        rules = [
+            {"direction": "above", "entity_id": "sensor.main_power_meter_wifi_phase_a_power",
+             "hysteresis": 0, "message": "Power is high!", "priority": 2,
+             "threshold": 2000, "title": "Power", "attention_page": "none"},
+            {"direction": "above", "entity_id": "sensor.msi_acpitz_0_temperature",
+             "hysteresis": 0, "message": "high", "priority": 2,
+             "threshold": 75, "title": "Msi lap temp", "attention_page": "none"},
+        ]
+        flow = config_flow.CydHAMonitorOptionsFlow()
+        flow.config_entry = SimpleNamespace(options={CONF_CAMERA_ENTITY: "camera.door", CONF_RULES: rules})
+        for _ in range(2):
+            schema = flow._rules_schema(flow.config_entry.options[CONF_RULES])
+            field = next(key for key in schema.schema if key.name == CONF_RULES)
+            submitted = field.default
+            self.assertTrue(all(rule[CONF_PRIORITY] == "2" for rule in submitted))
+            result = asyncio.run(flow.async_step_alerts({CONF_RULES: submitted}))
+            self.assertEqual(result["data"][CONF_CAMERA_ENTITY], "camera.door")
+            self.assertTrue(all(rule[CONF_PRIORITY] == 2 for rule in result["data"][CONF_RULES]))
+            flow.config_entry = SimpleNamespace(options=result["data"])
+
     def test_optional_entity_selectors_omit_empty_defaults(self) -> None:
         config_flow = _load_config_flow()
         values = {
