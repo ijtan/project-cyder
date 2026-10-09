@@ -1,4 +1,4 @@
-"""Optional selected-source weather, bounded to three cards/17 arguments."""
+"""Selected-source weather: 17-argument current data and optional 20-field caches."""
 from __future__ import annotations
 
 import asyncio
@@ -15,6 +15,7 @@ CONF_WEATHER_ENTITY = "weather_entity"
 CONF_WEATHER_ENABLED = "weather_enabled"
 CONF_WEATHER_FORECAST = "weather_forecast"
 ACTION_UPDATE_WEATHER = "update_weather"
+ACTION_UPDATE_WEATHER_FORECASTS = "update_weather_forecasts"
 FORECAST_INTERVAL = 900
 MAX_FORECAST_ROWS = 3
 _LOGGER = logging.getLogger(__name__)
@@ -138,6 +139,24 @@ def weather_action_data(state: Any, options: Mapping[str, Any],
     return payload
 
 
+def weather_forecasts_data(state: Any, options: Mapping[str, Any],
+                           modes: Mapping[str, list[tuple[str, str, str]]]) -> dict[str, Any]:
+    """Two bounded three-card caches; no source fallback or on-tap requests."""
+    available = bool(options.get(CONF_WEATHER_ENABLED) and options.get(CONF_WEATHER_ENTITY)
+                     and state is not None and state.state not in ("unknown", "unavailable"))
+    data: dict[str, Any] = {}
+    for kind in ("hourly", "daily"):
+        supported = available and forecast_type(state, kind) is not None
+        data[f"{kind}_supported"] = supported
+        rows = modes.get(kind, []) if supported else []
+        for index in range(1, 4):
+            row = rows[index - 1] if index <= len(rows) else ("", "", "")
+            for key, value, limit in zip(("label", "condition", "temperature"), row, (10, 24, 20), strict=True):
+                data[f"{kind}_{index}_{key}"] = _text(value, limit)
+    assert len(data) == 20
+    return data
+
+
 class WeatherBridge:
     """Coalesce changes, fetch every 15 minutes, serialize with dashboards."""
 
@@ -155,6 +174,9 @@ class WeatherBridge:
         self.kind: str | None = None
         self.forecast_status = ""
         self.updated = ""
+        self.mode_rows: dict[str, list[tuple[str, str, str]]] = {}
+        self.mode_last_fetch: dict[str, float] = {}
+        self.dual_service = getattr(runtime.service_names, "update_weather_forecasts", None)
         try:
             self.zone = ZoneInfo(getattr(hass.config, "time_zone", "UTC"))
         except (ZoneInfoNotFoundError, TypeError):
@@ -185,8 +207,11 @@ class WeatherBridge:
                     if kind is None:
                         self.rows = []
                         self.forecast_status = "Forecast not supported"
-                    elif self.clock() - self.last_fetch >= FORECAST_INTERVAL:
+                    elif self.clock() - (self.mode_last_fetch.get(kind, float("-inf"))
+                                         if self.dual_service else self.last_fetch) >= FORECAST_INTERVAL:
                         self.last_fetch = self.clock()
+                        if self.dual_service:
+                            self.mode_last_fetch[kind] = self.last_fetch
                         self.rows = []
                         self.forecast_status = "Forecast unavailable"
                         try:
@@ -204,10 +229,39 @@ class WeatherBridge:
                             raise
                         except Exception as err:
                             _LOGGER.warning("Weather forecast unavailable (%s)", type(err).__name__)
+                        if self.dual_service and kind in ("hourly", "daily"):
+                            self.mode_rows[kind] = self.rows
+                    if self.dual_service:
+                        # Serial, capability-gated fetches. Switching on the CYD
+                        # reads these caches and never bypasses the per-kind timer.
+                        for mode in ("hourly", "daily"):
+                            if forecast_type(state, mode) is None:
+                                self.mode_rows.pop(mode, None)
+                                continue
+                            if self.clock() - self.mode_last_fetch.get(mode, float("-inf")) < FORECAST_INTERVAL:
+                                continue
+                            self.mode_last_fetch[mode] = self.clock()
+                            self.mode_rows[mode] = []
+                            try:
+                                async with asyncio.timeout(10):
+                                    response = await self.hass.services.async_call(
+                                        "weather", "get_forecasts", {"entity_id": entity, "type": mode},
+                                        blocking=True, return_response=True)
+                                raw = response.get(entity, {}).get("forecast") if isinstance(response, Mapping) else None
+                                self.mode_rows[mode] = forecast_rows(raw, mode, state.attributes.get("temperature_unit"),
+                                                                     datetime.now(timezone.utc), self.zone)
+                            except asyncio.CancelledError:
+                                raise
+                            except Exception as err:
+                                _LOGGER.warning("Weather %s forecast unavailable (%s)", mode, type(err).__name__)
+                        if kind in ("hourly", "daily"):
+                            self.rows = self.mode_rows.get(kind, [])
+                            self.forecast_status = "" if self.rows else "Forecast unavailable"
                 else:
                     self.rows = []
                     self.kind = None
                     self.forecast_status = "Forecast unavailable"
+                    self.mode_rows.clear()
                 async with self.runtime.transition_lock:
                     if self.stopped or self.runtime.stopped:
                         return
@@ -218,6 +272,12 @@ class WeatherBridge:
                         await self.hass.services.async_call("esphome", self.runtime.service_names.update_weather,
                                                            data, blocking=True)
                     await asyncio.sleep(0.1)
+                    if self.dual_service and not self.stopped and not self.runtime.stopped:
+                        state = self.hass.states.get(entity) if enabled else None
+                        dual_data = weather_forecasts_data(state, self.options, self.mode_rows)
+                        async with asyncio.timeout(10):
+                            await self.hass.services.async_call("esphome", self.dual_service, dual_data, blocking=True)
+                        await asyncio.sleep(0.1)
                 if not self.dirty:
                     break
         except asyncio.CancelledError:
@@ -233,3 +293,4 @@ class WeatherBridge:
             self.task.cancel()
             await asyncio.gather(self.task, return_exceptions=True)
         self.rows = []
+        self.mode_rows.clear()

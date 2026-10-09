@@ -7,7 +7,7 @@ from zoneinfo import ZoneInfo
 
 from custom_components.cyd_ha_monitor.weather import (
     CONF_WEATHER_ENTITY, CONF_WEATHER_ENABLED, CONF_WEATHER_FORECAST,
-    WeatherBridge, forecast_rows, forecast_type, validate_weather, weather_action_data,
+    WeatherBridge, forecast_rows, forecast_type, validate_weather, weather_action_data, weather_forecasts_data,
 )
 
 
@@ -84,6 +84,28 @@ class WeatherFormattingTests(unittest.TestCase):
         rows = forecast_rows([{"datetime": "2026-10-09T12:00:00Z", "temperature": 24.6,
                                "templow": 17.9}], "daily", "°C", now, ZoneInfo("UTC"))
         self.assertEqual(rows[0][2], "18/25°C")
+
+    def test_dual_payload_is_twenty_bounded_fields_and_capability_gated(self):
+        options = validate_weather({CONF_WEATHER_ENTITY: "weather.selected", CONF_WEATHER_ENABLED: True})
+        modes = {"hourly": [("x" * 100, "Rainy" * 100, "20°C" * 100)],
+                 "daily": [("Fri", "Sunny", "18/25°C")]}
+        data = weather_forecasts_data(state(), options, modes)
+        self.assertEqual(len(data), 20)
+        self.assertTrue(data["hourly_supported"])
+        self.assertTrue(data["daily_supported"])
+        self.assertEqual(len(data["hourly_1_label"]), 10)
+        self.assertEqual(len(data["hourly_1_condition"]), 24)
+        self.assertEqual(len(data["hourly_1_temperature"]), 20)
+        data = weather_forecasts_data(state(features=1), options, modes)
+        self.assertFalse(data["hourly_supported"])
+        self.assertEqual(data["hourly_1_label"], "")
+        self.assertEqual(data["daily_1_label"], "Fri")
+        for selected in (None, state(condition="unavailable")):
+            cleared = weather_forecasts_data(selected, options, modes)
+            self.assertFalse(cleared["daily_supported"])
+            self.assertEqual(cleared["daily_1_temperature"], "")
+        options[CONF_WEATHER_ENTITY] = None
+        self.assertFalse(weather_forecasts_data(state(), options, modes)["daily_supported"])
 
 
 class WeatherBridgeTests(unittest.IsolatedAsyncioTestCase):
@@ -197,3 +219,67 @@ class WeatherBridgeTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(any(c[0] == "esphome" for c in self.calls))
         self.bridge.schedule()
         self.assertIsNone(self.bridge.task)
+
+    def enable_dual(self):
+        self.bridge.dual_service = "desk_update_weather_forecasts"
+
+    async def test_new_firmware_gets_two_modes_once_and_paced_actions(self):
+        self.enable_dual()
+        await self.run_update()
+        await self.run_update()
+        requests = [c for c in self.calls if c[0] == "weather"]
+        self.assertEqual([c[2]["type"] for c in requests], ["hourly", "daily"])
+        self.assertEqual({c[2]["entity_id"] for c in requests}, {"weather.selected"})
+        sent = [c for c in self.calls if c[0] == "esphome"]
+        self.assertEqual([len(c[2]) for c in sent], [17, 20, 17, 20])
+        self.assertTrue(sent[-1][2]["daily_supported"])
+        self.now += 900
+        await self.run_update()
+        self.assertEqual(sum(c[0] == "weather" for c in self.calls), 4)
+
+    async def test_daily_only_does_not_request_hourly_or_invent_it(self):
+        self.enable_dual()
+        self.selected = state(features=1)
+        await self.run_update()
+        self.assertEqual([c[2]["type"] for c in self.calls if c[0] == "weather"], ["daily"])
+        dual = next(c[2] for c in self.calls if c[1] == self.bridge.dual_service)
+        self.assertTrue(dual["daily_supported"])
+        self.assertFalse(dual["hourly_supported"])
+
+    async def test_dual_disabled_clears_both_caches_without_fetches(self):
+        self.enable_dual()
+        await self.run_update()
+        self.calls.clear()
+        self.bridge.options[CONF_WEATHER_ENABLED] = False
+        await self.run_update()
+        self.assertEqual([len(c[2]) for c in self.calls], [17, 20])
+        self.assertFalse(self.calls[-1][2]["hourly_supported"])
+        self.assertFalse(self.calls[-1][2]["daily_supported"])
+        self.assertEqual(self.bridge.mode_rows, {})
+
+    async def test_one_mode_failure_does_not_poison_the_other_or_retry_on_tap_refresh(self):
+        self.enable_dual()
+        original = self.bridge.hass.services.async_call
+        async def fails_hourly(domain, service, data, **kwargs):
+            if domain == "weather" and data["type"] == "hourly":
+                self.calls.append((domain, service, data, kwargs))
+                raise RuntimeError("hourly unavailable")
+            return await original(domain, service, data, **kwargs)
+        self.bridge.hass.services.async_call = fails_hourly
+        await self.run_update()
+        await self.run_update()
+        self.assertEqual(sum(c[0] == "weather" for c in self.calls), 2)
+        dual = [c[2] for c in self.calls if c[1] == self.bridge.dual_service][-1]
+        self.assertEqual(dual["hourly_1_label"], "")
+        self.assertNotEqual(dual["daily_1_label"], "")
+
+    async def test_capability_loss_clears_cached_mode_without_fetching_unsupported(self):
+        self.enable_dual()
+        await self.run_update()
+        self.selected = state(features=1)
+        await self.run_update()
+        self.assertEqual(sum(c[0] == "weather" for c in self.calls), 2)
+        dual = [c[2] for c in self.calls if c[1] == self.bridge.dual_service][-1]
+        self.assertFalse(dual["hourly_supported"])
+        self.assertTrue(dual["daily_supported"])
+        self.assertEqual(dual["hourly_1_temperature"], "")

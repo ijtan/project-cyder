@@ -180,6 +180,19 @@ This integration adds weather configuration, **not iPhone Bluetooth support**:
 ANCS pairing/radio controls belong to the separate experimental firmware, require
 their own hardware/memory validation, and are not installed by HACS.
 
+**v0.2.6 companion UI update:** firmware can optionally expose
+`update_weather_forecasts` (20 arguments) for two separate, bounded three-card
+caches. Only when this action is present does the bridge acquire both supported
+hourly/daily modes, serially, once per 15 minutes **per mode**, including failures.
+Clock/calendar switching is local on the CYD, not a new request on each tap; the
+button is hidden unless the selected provider supports both modes. Current
+17-argument firmware keeps its existing single-mode behavior and throttle.
+The matching CYD firmware (`b2141128`) enlarges the camera without increasing
+decoded-image size, removes the redundant weather title, and adds condition
+icons and a wider temperature field. Update this integration in HACS and restart
+HA to enable both caches. The toggle requires the matching firmware and a
+selected weather provider supporting both hourly and daily forecasts.
+
 Each additional provider card accepts optional session and weekly quota
 percentage sensors. Unavailable sensor states display as `--%` and suppress the
 corresponding progress bar. The compact AI page shows Claude plus up to three
