@@ -41,6 +41,9 @@ async def async_setup(hass: HomeAssistant, config: dict[str, Any]) -> bool:
     from .camera_thumbnail import async_setup_thumbnails
 
     await async_setup_thumbnails(hass)
+    from .printer_services import async_setup_printer_services
+
+    async_setup_printer_services(hass)
     return True
 
 
@@ -61,6 +64,8 @@ class Runtime:
     dashboard_task: asyncio.Task[None] | None = None
     stopped: bool = False
     weather_bridge: Any = None
+    printer_bridge: Any = None
+    printer_options: dict[str, Any] = field(default_factory=dict)
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -261,6 +266,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         entry.async_on_unload(async_track_time_interval(hass, refresh_weather, timedelta(seconds=30)))
     elif weather_options[CONF_WEATHER_ENABLED] and weather_options[CONF_WEATHER_ENTITY]:
         _LOGGER.warning("Selected CYD firmware lacks update_weather; weather requires a firmware update")
+    from .printer import PrinterBridge, printer_entities, validate_printer
+
+    try:
+        runtime.printer_options = validate_printer(entry.options)
+    except (TypeError, ValueError):
+        runtime.printer_options = validate_printer({})
+        _LOGGER.warning("Invalid printer options; printer is disabled")
+    if action_services.update_printer:
+        printer = runtime.printer_bridge = PrinterBridge(hass, runtime, runtime.printer_options)
+        printer.schedule()  # Authoritative clear too when disabled/reselected.
+        selected = printer_entities(runtime.printer_options)
+        if selected:
+            @callback
+            def printer_changed(_event: Event) -> None:
+                printer.schedule()
+            entry.async_on_unload(async_track_state_change_event(hass, selected, printer_changed))
+        @callback
+        def refresh_printer(_now: Any) -> None:
+            printer.schedule()
+        entry.async_on_unload(async_track_time_interval(hass, refresh_printer, timedelta(seconds=30)))
+    elif runtime.printer_options["printer_enabled"]:
+        _LOGGER.warning("Selected CYD firmware lacks update_printer; printer requires a firmware update")
     return True
 
 
@@ -271,6 +298,16 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         runtime.stopped = True
         if runtime.weather_bridge is not None:
             await runtime.weather_bridge.close()
+        if runtime.printer_bridge is not None:
+            await runtime.printer_bridge.close()
+            # Release display frame on unload rather than leaving a stale job.
+            from .printer import printer_action_data
+            try:
+                async with runtime.transition_lock, asyncio.timeout(10):
+                    await hass.services.async_call(ESPHOME_DOMAIN, runtime.service_names.update_printer,
+                        printer_action_data(hass, {}), blocking=True)
+            except Exception as err:
+                _LOGGER.warning("Printer clear unavailable (%s)", type(err).__name__)
         if runtime.dashboard_task is not None:
             runtime.dashboard_task.cancel()
             try:
@@ -289,10 +326,10 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         )
     if not hass.data.get(DOMAIN):
         hass.data.pop(DOMAIN, None)
-    from .camera_thumbnail import STORE_KEY, selected_cameras
+    from .camera_thumbnail import STORE_KEY, selected_media
 
     if (store := hass.data.get(STORE_KEY)) is not None:
-        await store.prune(selected_cameras(hass))
+        await store.prune(selected_media(hass))
     return True
 
 

@@ -252,8 +252,98 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["dashboard", "weather", "alerts"],
+            menu_options=["dashboard", "weather", "printer", "alerts"],
         )
+
+    async def async_step_printer(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Select mode separately; mappings are reviewed before committing."""
+        values = self.config_entry.options
+        if user_input is not None:
+            if not user_input.get("printer_enabled"):
+                return self.async_create_entry(title="", data={**values, "printer_enabled": False})
+            self._printer_draft = {**values, **user_input}
+            if user_input["printer_mode"] != values.get("printer_mode", "custom"):
+                from .printer import FIELDS, field_key
+                self._printer_draft.update({field_key(f): None for f in (*FIELDS, "condition")})
+                self._printer_draft["printer_device_id"] = None
+            return await (self.async_step_printer_bambu() if user_input["printer_mode"] == "bambu"
+                          else self.async_step_printer_fields())
+        return self.async_show_form(step_id="printer", data_schema=vol.Schema({
+            vol.Required("printer_enabled", default=values.get("printer_enabled", False)): selector.BooleanSelector(),
+            vol.Required("printer_mode", default=values.get("printer_mode", "bambu")): selector.SelectSelector({
+                "options": [{"value": "bambu", "label": "Bambu Lab printer"}, {"value": "custom", "label": "Custom mappings"}]}),
+        }))
+
+    async def async_step_printer_bambu(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        from homeassistant.helpers import device_registry as dr, entity_registry as er
+        from .printer import bambu_mapping, bambu_printers
+
+        devices = dr.async_get(self.hass)
+        entities = list(er.async_get(self.hass).entities.values())
+        printers = bambu_printers(devices.devices.values(), entities)
+        errors = {}
+        if user_input is not None:
+            device = devices.async_get(user_input["printer_device_id"])
+            try:
+                if device is None:
+                    raise ValueError("Missing printer")
+                # Reopening/saving the same selection never restores cleared fields.
+                mapping = bambu_mapping(device, entities)
+                if device.id != self._printer_draft.get("printer_device_id"):
+                    self._printer_draft.update(mapping)
+                return await self.async_step_printer_fields()
+            except ValueError:
+                errors["base"] = "invalid_printer"
+        options = [{"value": d.id, "label": d.name_by_user or d.name or d.model or "Bambu printer"} for d in printers]
+        return self.async_show_form(step_id="printer_bambu", data_schema=vol.Schema({
+            vol.Required("printer_device_id", description={"suggested_value": self._printer_draft.get("printer_device_id")}):
+                selector.SelectSelector({"options": options, "mode": "dropdown"}),
+        }), errors=errors)
+
+    async def async_step_printer_fields(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        from .printer import validate_printer
+
+        values = self._printer_draft
+        errors = {}
+        if user_input is not None:
+            try:
+                # Do not merge omitted selector fields: omitted means explicitly cleared.
+                checked = validate_printer({**user_input, "printer_enabled": True,
+                    "printer_mode": values["printer_mode"], "printer_device_id": values.get("printer_device_id")})
+                if not checked["printer_status_entity"]:
+                    raise ValueError("Status is required")
+                if checked["printer_visibility"] == "state" and not checked["printer_condition_entity"]:
+                    raise ValueError("Choose the visibility condition source")
+                return self.async_create_entry(title="", data={**self.config_entry.options, **checked})
+            except (ValueError, TypeError):
+                values, errors = user_input, {"base": "invalid_printer"}
+        return self.async_show_form(step_id="printer_fields", data_schema=self._printer_fields_schema(values), errors=errors)
+
+    @staticmethod
+    def _printer_fields_schema(values: dict[str, Any]) -> vol.Schema:
+        from .printer import FIELDS, field_key
+
+        schema = {
+            vol.Optional("printer_name", default=values.get("printer_name", "Printer")): selector.TextSelector(),
+            vol.Required("printer_media_default", default=values.get("printer_media_default", "render")):
+                selector.SelectSelector({"options": ["render", "camera"]}),
+            vol.Required("printer_visibility", default=values.get("printer_visibility", "state")): selector.SelectSelector({
+                "options": [{"value": "state", "label": "When selected entity matches a state"},
+                            {"value": "always", "label": "Always"}]}),
+            vol.Required("printer_visibility_override", default=values.get("printer_visibility_override", "auto")): selector.SelectSelector({
+                "options": ["auto", "show", "hide"]}),
+            vol.Optional("printer_condition_states", default=values.get("printer_condition_states", ["running", "pause"])):
+                selector.SelectSelector({"options": [], "multiple": True, "custom_value": True, "mode": "dropdown"}),
+        }
+        for field in (*FIELDS, "condition"):
+            key = field_key(field)
+            selected = values.get(key)
+            form_key = vol.Optional(key, description={"suggested_value": selected}) if selected else vol.Optional(key)
+            domains = ["image", "camera"] if field in ("render", "camera") else ["sensor", "input_number", "number"]
+            if field in ("status", "condition", "job"):
+                domains = ["sensor", "binary_sensor", "input_select", "select", "input_text", "input_boolean"]
+            schema[form_key] = selector.EntitySelector({"domain": domains})
+        return vol.Schema(schema)
 
     async def async_step_weather(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """Configure weather separately; never reset dashboard/alert selections."""

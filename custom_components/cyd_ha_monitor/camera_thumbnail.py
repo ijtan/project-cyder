@@ -150,28 +150,69 @@ class ThumbnailStore:
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
 
+    async def invalidate(self, entities: set[str]) -> None:
+        """Drop only specified old-job frames; cancellation completes before reuse."""
+        tasks = []
+        for entity in entities:
+            frame = self.frames.get(entity)
+            if frame is not None:
+                # Preserve the attempt timer across job changes; invalidation
+                # must not turn rapidly changing job IDs into unlimited fetches.
+                frame.body = None
+                frame.generated = 0
+                if frame.task is not None:
+                    frame.task.cancel()
+                    tasks.append(frame.task)
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+        for entity in entities:
+            frame = self.frames.get(entity)
+            if frame is not None and frame.task is not None and frame.task.done():
+                frame.task = None  # Also handles cancellation before coroutine entry.
+
 
 def selected_cameras(hass: Any) -> set[str]:
+    from .printer import printer_visible
+
     return {
         runtime.dashboard_options[CONF_CAMERA_ENTITY]
         for runtime in hass.data.get(DOMAIN, {}).values()
         if not runtime.stopped
         and runtime.dashboard_options.get(CONF_SHOW_CAMERA_PAGE)
         and isinstance(runtime.dashboard_options.get(CONF_CAMERA_ENTITY), str)
-    }
+        and not (getattr(getattr(runtime, "service_names", None), "update_printer", None)
+                 and printer_visible(hass, getattr(runtime, "printer_options", {})))
+    } | selected_printer_media(hass, "camera")
+
+
+def selected_printer_media(hass: Any, domain: str) -> set[str]:
+    from .printer import field_key, printer_visible
+
+    return {entity for runtime in hass.data.get(DOMAIN, {}).values()
+            if not runtime.stopped and printer_visible(hass, getattr(runtime, "printer_options", {}))
+            and getattr(getattr(runtime, "service_names", None), "update_printer", None)
+            for field in ("render", "camera")
+            if isinstance(entity := getattr(runtime, "printer_options", {}).get(field_key(field)), str)
+            and entity.startswith(domain + ".")}
+
+
+def selected_media(hass: Any) -> set[str]:
+    return selected_cameras(hass) | selected_printer_media(hass, "image")
 
 
 async def async_setup_thumbnails(hass: Any) -> None:
     from aiohttp import web
     from homeassistant.components.camera import CameraImageView, async_get_image
     from homeassistant.components.camera.const import DATA_COMPONENT
+    from homeassistant.components.image import ImageView, async_get_image as async_get_still
+    from homeassistant.components.image.const import DATA_COMPONENT as IMAGE_COMPONENT
     from homeassistant.const import EVENT_HOMEASSISTANT_STOP
 
     async def fetch(entity_id: str) -> bytes:
         # Do our own magic-byte decoding and strict resizing. Passing dimensions
         # here could invoke HA's MIME-dependent JPEG scaler before normalization
         # (some integrations mislabel PNG bytes as image/jpeg).
-        image = await async_get_image(hass, entity_id, timeout=18)
+        image = await (async_get_still if entity_id.startswith("image.") else async_get_image)(hass, entity_id, timeout=18)
         return image.content
 
     async def normalize(source: bytes) -> bytes:
@@ -198,6 +239,28 @@ async def async_setup_thumbnails(hass: Any) -> None:
             return web.Response(body=body, content_type="image/qoi", headers=headers)
 
     hass.http.register_view(ThumbnailView(hass.data[DATA_COMPONENT]))
+
+    class PrinterImageView(ImageView):
+        # Native image-token auth; one shared store/acquisition coroutine.
+        url = f"/api/{DOMAIN}/printer_image/{{entity_id}}"
+        name = f"api:{DOMAIN}:printer_image"
+
+        async def handle(self, request: Any, image_entity: Any) -> Any:
+            if image_entity.entity_id not in selected_printer_media(hass, "image"):
+                raise web.HTTPNotFound
+            body = store.get(image_entity.entity_id)
+            headers = {"Cache-Control": "no-store"}
+            if body is None:
+                return web.Response(status=503, headers={**headers, "Retry-After": "10"})
+            return web.Response(body=body, content_type="image/qoi", headers=headers)
+
+        async def head(self, request: Any, entity_id: str) -> Any:
+            # Never invoke ImageView.head's synchronous acquisition path.
+            entity = await self._authenticate_request(request, entity_id)
+            response = await self.handle(request, entity)
+            return web.Response(status=response.status, headers=response.headers)
+
+    hass.http.register_view(PrinterImageView(hass.data[IMAGE_COMPONENT]))
 
     async def stop(_event: Any) -> None:
         await store.prune(set())

@@ -707,7 +707,12 @@ def _room_devices_json(hass: Any, options: Mapping[str, Any]) -> str:
 
 def _camera_snapshot_url(hass: Any, entity_id: Any) -> str:
     """Build a short-lived local camera-proxy URL; never persist this value."""
-    if not isinstance(entity_id, str) or not entity_id.startswith("camera."):
+    return _local_thumbnail_url(hass, entity_id, "camera_thumbnail", "camera")
+
+
+def _local_thumbnail_url(hass: Any, entity_id: Any, route: str, domain: str) -> str:
+    """Internal selected-media URL builder; callers own authorization checks."""
+    if not isinstance(entity_id, str) or not entity_id.startswith(domain + "."):
         return ""
     state = hass.states.get(entity_id)
     token = state.attributes.get("access_token") if state is not None else None
@@ -750,7 +755,7 @@ def _camera_snapshot_url(hass: Any, entity_id: Any) -> str:
         return ""
 
     base_path = parsed.path.rstrip("/")
-    proxy_path = f"{base_path}/api/cyd_ha_monitor/camera_thumbnail/{entity_id}"
+    proxy_path = f"{base_path}/api/cyd_ha_monitor/{route}/{entity_id}"
     query = urlencode({"token": token})
     return urlunsplit((parsed.scheme, parsed.netloc, proxy_path, query, ""))
 

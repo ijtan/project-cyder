@@ -32,6 +32,7 @@
         "menu_options": {
           "dashboard": "Dashboard and usage",
           "weather": "Weather and forecast",
+          "printer": "3D printer monitor",
           "alerts": "Alert rules"
         }
       },
@@ -80,6 +81,43 @@
           "weather_forecast": "Forecast view"
         }
       },
+      "printer": {
+        "title": "3D printer monitor",
+        "description": "Use the shared top-right camera slot for a selected printer when its condition matches. No printer controls are sent. Requires matching update_printer firmware; normal camera selections are preserved.",
+        "data": {"printer_enabled": "Enable printer monitor", "printer_mode": "Printer mapping mode"}
+      },
+      "printer_bambu": {
+        "title": "Select a Bambu Lab printer",
+        "description": "Only printer devices from the Bambu Lab integration are listed (not AMS/spool devices). On a new selection, detected fields are populated for review. Re-selecting the same printer preserves cleared fields. If the list is empty, use Custom mappings or enable the printer's entities in HA.",
+        "data": {"printer_device_id": "Bambu Lab printer"}
+      },
+      "printer_fields": {
+        "title": "Printer sources and visibility",
+        "description": "Review or clear optional mappings. Select a status source, and a condition source for state-based visibility. State matching is exact (Bambu uses running/pause). Automations can override Auto/Show/Hide. Start time produces wall-clock elapsed including pauses; a duration source overrides it. Render/camera are still thumbnails using one shared image buffer. No missing source is guessed.",
+        "data": {
+          "printer_name": "Display name",
+          "printer_media_default": "Default image view (no automatic fallback)",
+          "printer_visibility": "Default visibility",
+          "printer_visibility_override": "Automation visibility override",
+          "printer_condition_states": "Show when state is one of",
+          "printer_condition_entity": "Visibility condition source",
+          "printer_status_entity": "Print status (required)",
+          "printer_progress_entity": "Progress percent",
+          "printer_job_entity": "Job name",
+          "printer_start_entity": "Start timestamp (wall-clock elapsed)",
+          "printer_end_entity": "End timestamp (freeze completed elapsed)",
+          "printer_elapsed_entity": "Elapsed duration (optional override)",
+          "printer_remaining_entity": "Remaining duration",
+          "printer_layer_entity": "Current layer",
+          "printer_total_layers_entity": "Total layers",
+          "printer_nozzle_entity": "Nozzle temperature",
+          "printer_nozzle_target_entity": "Target nozzle temperature",
+          "printer_bed_entity": "Bed temperature",
+          "printer_bed_target_entity": "Target bed temperature",
+          "printer_render_entity": "Print render / cover image",
+          "printer_camera_entity": "Printer camera / chamber image"
+        }
+      },
       "alerts": {
         "title": "Alert rules",
         "description": "Add threshold rules using the sensor's own units. Warning thresholds optionally color sensor rows as they approach the limit. Comparisons are strict; hysteresis controls when a breached rule clears. On-device acknowledgement hides the incident until recovery; a 15-minute snooze resurfaces it if it remains active. Optionally route alerts to a related page; after clearing, it stays visible for 10 seconds unless touched, then the previous page returns.",
@@ -90,6 +128,7 @@
     },
     "error": {
       "invalid_weather": "Choose a weather entity and a valid forecast mode.",
+      "invalid_printer": "Choose a printer status source, valid optional mappings, and a condition source for state-based visibility. The Bambu selection must be a printer device. Condition states must be short, nonempty values (up to 12).",
       "invalid_dashboard": "Check selected entities and page visibility. Room controls support climate, light, and switch entities in up to four Home Assistant Areas, with at most five devices per Area. Configure no more than three additional AI providers; provider names must be unique and at most 8 characters, and each provider needs a session or weekly quota sensor. Configure no more than five named sensor rows with names up to 18 characters. The six rotation order slots must each contain a different page. Page and camera refresh intervals must be 10–120 seconds in 5-second steps."
     }
   },

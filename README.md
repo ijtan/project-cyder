@@ -193,6 +193,56 @@ icons and a wider temperature field. Update this integration in HACS and restart
 HA to enable both caches. The toggle requires the matching firmware and a
 selected weather provider supporting both hourly and daily forecasts.
 
+### 3D printer monitor (v0.2.7)
+
+Matching companion firmware (`c61c1aaa`) adds an optional `update_printer` action. Under
+**Configure → 3D printer monitor**, select **Bambu Lab printer** to choose a
+printer device from the installed `bambu_lab` integration, then review detected
+sources. AMS/spool child devices are excluded. **Custom mappings** lets you select
+individual HA entities instead. Disabled, missing or ambiguous Bambu roles are
+left empty; reselecting the same printer does not restore cleared mappings.
+
+The top-right camera slot becomes a printer shortcut while the selected condition
+matches. Your normal camera configuration remains intact and returns when the
+printer is hidden. Available readings include job/status/progress, elapsed and
+remaining time, layers, and nozzle/bed current/target temperatures. No printer
+actuation is sent. An unconfigured optional field is omitted, not replaced with
+another entity. A start timestamp gives **wall-clock elapsed including pauses**;
+use an explicit duration sensor for active-printing elapsed if available.
+
+The local render/camera button switches the one decoded thumbnail buffer, not
+between two resident images or video streams. Select a default view explicitly.
+Tap the image to enlarge it, then tap again to return to the status overview.
+The redundant image-view caption is omitted; the button labels the other view.
+There is no silent fallback when its source is missing. Bambu cover renders are
+`image.*`; chamber views may be `camera.*` or `image.*`. Both use HA's native
+rotating entity-token authentication and the existing bounded HA-side QOI
+normalizer. Printer hiding, job/source changes and unload release old work/data.
+
+For conditional visibility choose an entity and exact matching states (Bambu
+defaults: `running`, `pause`), or Always. Automations can persistently override
+visibility for a particular Cydex entry without changing its source selections:
+
+```yaml
+action: cyd_ha_monitor.set_printer_visibility
+data:
+  entry_id: YOUR_CYDEX_CONFIG_ENTRY_ID
+  mode: show  # auto restores the condition; hide forces it hidden
+```
+
+Showing never chooses an unconfigured printer and does not automatically change
+the active page. If the printer disappears while being viewed, the device returns
+Home, leaving the ordinary camera available from the shortcut. The six rotation
+slots and remembered media navigation ID remain stable.
+
+**Update to v0.2.7 in HACS and restart Home Assistant.** Development CYD firmware
+`c61c1aaa` was remotely built, budget-reviewed, installed and API-verified; v0.2.6
+does not contain printer configuration/transport. Other devices also need matching
+approved firmware. The monitor is disabled by default, and older firmware is not
+sent printer actions. Physical A1 media/zoom/stability checks remain pending.
+Custom inputs currently
+use entity states; expose an attribute through an HA template sensor if needed.
+
 Each additional provider card accepts optional session and weekly quota
 percentage sensors. Unavailable sensor states display as `--%` and suppress the
 corresponding progress bar. The compact AI page shows Claude plus up to three

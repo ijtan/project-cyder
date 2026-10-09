@@ -15,6 +15,7 @@ from .const import (
 )
 from .dashboard_transport import DASHBOARD_ACTIONS
 from .weather import ACTION_UPDATE_WEATHER, ACTION_UPDATE_WEATHER_FORECASTS
+from .printer import ACTION_UPDATE_PRINTER
 
 _ACTION_NAMES = (ACTION_DISPLAY_ALERT, ACTION_CLEAR_ALERT, ACTION_DISMISS_ALERT)
 _DEVICE_NAME_KEYS = ("node_name", "device_name", "friendly_name", "name")
@@ -32,6 +33,7 @@ class ActionServices:
     dashboard_actions: tuple[str, ...] = ()
     update_weather: str | None = None
     update_weather_forecasts: str | None = None
+    update_printer: str | None = None
 
 
 def service_names(device_prefix: str) -> ActionServices:
@@ -61,6 +63,7 @@ def _registered_action_services(prefix: str, registered: Mapping[str, Any]) -> A
         update_weather_forecasts=(f"{prefix}_{ACTION_UPDATE_WEATHER_FORECASTS}"
                                   if f"{prefix}_{ACTION_UPDATE_WEATHER}" in registered
                                   and f"{prefix}_{ACTION_UPDATE_WEATHER_FORECASTS}" in registered else None),
+        update_printer=f"{prefix}_{ACTION_UPDATE_PRINTER}" if f"{prefix}_{ACTION_UPDATE_PRINTER}" in registered else None,
     )
 
 

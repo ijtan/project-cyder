@@ -1,0 +1,19 @@
+set_printer_visibility:
+  name: Set printer visibility
+  description: Override the selected printer shortcut, or restore its configured condition. Show never selects an unconfigured printer.
+  fields:
+    entry_id:
+      name: Project Cydex entry
+      required: true
+      selector:
+        config_entry:
+          integration: cyd_ha_monitor
+    mode:
+      name: Visibility
+      required: true
+      selector:
+        select:
+          options:
+            - auto
+            - show
+            - hide

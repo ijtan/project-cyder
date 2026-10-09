@@ -80,6 +80,16 @@ class ServiceMapTests(unittest.TestCase):
 
         self.assertEqual(resolve_action_services(device, [entry], registered), names)
 
+    def test_printer_action_is_optional_and_selected_device_only(self) -> None:
+        names = service_names("desk_hass")
+        device = FakeDevice({("esphome", "desk-hass")})
+        entry = FakeEntry("esphome", "Desk", {"node_name": "desk-hass"})
+        registered = registered_actions(names)
+        registered["other_update_printer"] = FakeService("")
+        self.assertIsNone(resolve_action_services(device, [entry], registered).update_printer)
+        registered["desk_hass_update_printer"] = FakeService("")
+        self.assertEqual(resolve_action_services(device, [entry], registered).update_printer, "desk_hass_update_printer")
+
     def test_uses_service_descriptions_when_registry_name_is_edited(self) -> None:
         names = service_names("cyd_node")
         device = FakeDevice({("esphome", "old-node-name")}, name="CYD Display")
