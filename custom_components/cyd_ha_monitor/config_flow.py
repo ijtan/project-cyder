@@ -252,8 +252,37 @@ class CydHAMonitorOptionsFlow(OptionsFlow):
     ) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["dashboard", "alerts"],
+            menu_options=["dashboard", "weather", "alerts"],
         )
+
+    async def async_step_weather(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """Configure weather separately; never reset dashboard/alert selections."""
+        from .weather import validate_weather
+
+        if user_input is not None:
+            try:
+                values = validate_weather(user_input)
+            except (TypeError, ValueError):
+                return self.async_show_form(step_id="weather", data_schema=self._weather_schema(user_input),
+                                            errors={"base": "invalid_weather"})
+            return self.async_create_entry(title="", data={**self.config_entry.options, **values})
+        return self.async_show_form(step_id="weather", data_schema=self._weather_schema(self.config_entry.options))
+
+    @staticmethod
+    def _weather_schema(values: dict[str, Any]) -> vol.Schema:
+        from .weather import CONF_WEATHER_ENABLED, CONF_WEATHER_ENTITY, CONF_WEATHER_FORECAST
+
+        selected = _entity_selector_default(values.get(CONF_WEATHER_ENTITY))
+        key = vol.Optional(CONF_WEATHER_ENTITY, description={"suggested_value": selected}) if selected else vol.Optional(CONF_WEATHER_ENTITY)
+        return vol.Schema({
+            key: selector.EntitySelector({"domain": "weather"}),
+            vol.Optional(CONF_WEATHER_ENABLED, default=values.get(CONF_WEATHER_ENABLED, False)): selector.BooleanSelector(),
+            vol.Optional(CONF_WEATHER_FORECAST, default=values.get(CONF_WEATHER_FORECAST, "auto")): selector.SelectSelector({
+                "options": [{"value": "auto", "label": "Automatic (hourly, then daily)"},
+                            {"value": "hourly", "label": "Next hours"},
+                            {"value": "daily", "label": "Next days"}],
+            }),
+        })
 
     async def async_step_dashboard(
         self, user_input: dict[str, Any] | None = None

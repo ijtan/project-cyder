@@ -31,6 +31,7 @@
         "title": "Project Cydex settings",
         "menu_options": {
           "dashboard": "Dashboard and usage",
+          "weather": "Weather and forecast",
           "alerts": "Alert rules"
         }
       },
@@ -70,6 +71,15 @@
           "ai_providers": "Additional AI providers"
         }
       },
+      "weather": {
+        "title": "Weather and forecast",
+        "description": "Select one Home Assistant weather entity. The optional CYD weather shortcut shows current conditions and up to three forecast periods in the provider's units. Forecast requests are limited to once per 15 minutes. This requires matching firmware with update_weather; existing dashboards remain compatible without it. Clearing the source or disabling weather clears displayed data. Weather does not change the six-page rotation order.",
+        "data": {
+          "weather_entity": "Weather source",
+          "weather_enabled": "Show weather shortcut",
+          "weather_forecast": "Forecast view"
+        }
+      },
       "alerts": {
         "title": "Alert rules",
         "description": "Add threshold rules using the sensor's own units. Warning thresholds optionally color sensor rows as they approach the limit. Comparisons are strict; hysteresis controls when a breached rule clears. On-device acknowledgement hides the incident until recovery; a 15-minute snooze resurfaces it if it remains active. Optionally route alerts to a related page; after clearing, it stays visible for 10 seconds unless touched, then the previous page returns.",
@@ -79,6 +89,7 @@
       }
     },
     "error": {
+      "invalid_weather": "Choose a weather entity and a valid forecast mode.",
       "invalid_dashboard": "Check selected entities and page visibility. Room controls support climate, light, and switch entities in up to four Home Assistant Areas, with at most five devices per Area. Configure no more than three additional AI providers; provider names must be unique and at most 8 characters, and each provider needs a session or weekly quota sensor. Configure no more than five named sensor rows with names up to 18 characters. The six rotation order slots must each contain a different page. Page and camera refresh intervals must be 10–120 seconds in 5-second steps."
     }
   },

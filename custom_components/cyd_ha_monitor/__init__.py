@@ -60,6 +60,7 @@ class Runtime:
     dashboard_update_dirty: bool = False
     dashboard_task: asyncio.Task[None] | None = None
     stopped: bool = False
+    weather_bridge: Any = None
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
@@ -238,6 +239,28 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
             hass, refresh_dashboard, timedelta(seconds=30)
         ))
 
+    from .weather import CONF_WEATHER_ENABLED, CONF_WEATHER_ENTITY, WeatherBridge, validate_weather
+
+    try:
+        weather_options = validate_weather(entry.options)
+    except ValueError:
+        weather_options = validate_weather({})
+        _LOGGER.warning("Invalid weather options; weather is disabled")
+    if action_services.update_weather is not None:
+        bridge = runtime.weather_bridge = WeatherBridge(hass, runtime, weather_options)
+        bridge.schedule()  # Send an authoritative empty update too, on clear/disable.
+        entity = weather_options[CONF_WEATHER_ENTITY]
+        if entity and weather_options[CONF_WEATHER_ENABLED]:
+            @callback
+            def weather_changed(_event: Event) -> None:
+                bridge.schedule()
+            entry.async_on_unload(async_track_state_change_event(hass, [entity], weather_changed))
+        @callback
+        def refresh_weather(_now: Any) -> None:
+            bridge.schedule()
+        entry.async_on_unload(async_track_time_interval(hass, refresh_weather, timedelta(seconds=30)))
+    elif weather_options[CONF_WEATHER_ENABLED] and weather_options[CONF_WEATHER_ENTITY]:
+        _LOGGER.warning("Selected CYD firmware lacks update_weather; weather requires a firmware update")
     return True
 
 
@@ -246,6 +269,8 @@ async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     runtime: Runtime | None = hass.data.get(DOMAIN, {}).pop(entry.entry_id, None)
     if runtime is not None:
         runtime.stopped = True
+        if runtime.weather_bridge is not None:
+            await runtime.weather_bridge.close()
         if runtime.dashboard_task is not None:
             runtime.dashboard_task.cancel()
             try:

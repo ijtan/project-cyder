@@ -140,6 +140,24 @@ def _load_config_flow():
 
 
 class DashboardFormDefaultTests(unittest.TestCase):
+    def test_weather_clear_is_authoritative_and_preserves_other_options(self):
+        from custom_components.cyd_ha_monitor.weather import CONF_WEATHER_ENTITY, CONF_WEATHER_ENABLED
+
+        config_flow = _load_config_flow()
+        flow = config_flow.CydHAMonitorOptionsFlow()
+        original = {CONF_WEATHER_ENTITY: "weather.old", CONF_WEATHER_ENABLED: True,
+                    CONF_CAMERA_ENTITY: "camera.saved", CONF_RULES: []}
+        flow.config_entry = SimpleNamespace(options=original)
+        schema = flow._weather_schema(original)
+        field = next(key for key in schema.schema if key.name == CONF_WEATHER_ENTITY)
+        self.assertIs(field.default, _UNDEFINED)
+        self.assertEqual(schema.schema[field].config["domain"], "weather")
+        result = asyncio.run(flow.async_step_weather(schema({CONF_WEATHER_ENABLED: True})))
+        self.assertIsNone(result["data"][CONF_WEATHER_ENTITY])
+        self.assertEqual(result["data"][CONF_CAMERA_ENTITY], "camera.saved")
+        self.assertEqual(result["data"][CONF_RULES], [])
+        self.assertEqual(original[CONF_WEATHER_ENTITY], "weather.old")
+
     def test_alert_form_priorities_are_strings_without_mutating_saved_rules(self) -> None:
         config_flow = _load_config_flow()
         for priority in (1, 2, 3, "2"):

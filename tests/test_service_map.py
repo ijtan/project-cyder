@@ -50,6 +50,20 @@ def registered_actions(names, description=""):
 
 
 class ServiceMapTests(unittest.TestCase):
+    def test_weather_is_optional_and_never_uses_another_devices_service(self) -> None:
+        names = service_names("desk_hass")
+        device = FakeDevice({("esphome", "desk-hass")})
+        entry = FakeEntry("esphome", "Desk", {"node_name": "desk-hass"})
+        registered = registered_actions(names)
+        registered["other_update_weather"] = FakeService("")
+        result = resolve_action_services(device, [entry], registered)
+        self.assertIsNone(result.update_weather)
+        self.assertEqual(result.dashboard_actions, names.dashboard_actions)
+        registered["desk_hass_update_weather"] = FakeService("")
+        result = resolve_action_services(device, [entry], registered)
+        self.assertEqual(result.update_weather, "desk_hass_update_weather")
+        self.assertEqual(result.dashboard_actions, names.dashboard_actions)
+
     def test_uses_selected_device_node_identifier_and_hyphen_replacement(self) -> None:
         names = service_names("monitor_node")
         device = FakeDevice({("esphome", "monitor-node")}, name="A user label")

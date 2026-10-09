@@ -14,6 +14,7 @@ from .const import (
     ESPHOME_DOMAIN,
 )
 from .dashboard_transport import DASHBOARD_ACTIONS
+from .weather import ACTION_UPDATE_WEATHER
 
 _ACTION_NAMES = (ACTION_DISPLAY_ALERT, ACTION_CLEAR_ALERT, ACTION_DISMISS_ALERT)
 _DEVICE_NAME_KEYS = ("node_name", "device_name", "friendly_name", "name")
@@ -29,6 +30,7 @@ class ActionServices:
     update_dashboard: str | None = None
     focus_page: str | None = None
     dashboard_actions: tuple[str, ...] = ()
+    update_weather: str | None = None
 
 
 def service_names(device_prefix: str) -> ActionServices:
@@ -54,6 +56,7 @@ def _registered_action_services(prefix: str, registered: Mapping[str, Any]) -> A
         update_dashboard=names.update_dashboard if supported else None,
         focus_page=names.focus_page if names.focus_page in registered else None,
         dashboard_actions=names.dashboard_actions if supported else (),
+        update_weather=f"{prefix}_{ACTION_UPDATE_WEATHER}" if f"{prefix}_{ACTION_UPDATE_WEATHER}" in registered else None,
     )
 
 

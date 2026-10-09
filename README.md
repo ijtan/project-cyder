@@ -25,6 +25,12 @@ the local network.
 
 ## Current release
 
+**Version 0.2.5** adds optional, selected-source weather and three forecast cards.
+Matching weather/camera firmware was remotely compiled and installed over OTA on
+the test CYD; its new `update_weather` action and a short post-boot memory capture
+were verified. Actual weather-provider/display behavior still needs an on-device
+check after updating this integration. Bluetooth is not part of this deployment.
+
 **Version 0.2.4** fixes alert priority dropdowns after reopening saved rules,
 uses automatically detected local HA URLs, and adds a bounded colour camera
 thumbnail endpoint. Install matching `qoi_v1` firmware before updating/enabling
@@ -152,6 +158,27 @@ with at least 48 KiB free/24 KiB largest block (larger allowances for HTTPS),
 closes stalled downloads, and performs only two faster ten-second retries before
 returning to the configured refresh interval. Labels describe receipt time, not
 the camera's capture time: a served frame may already be up to sixty seconds old.
+
+**Optional weather:** the separate **Weather and forecast** options
+menu selects one explicit `weather.*` source and enables a header shortcut.
+The weather provider configured in Home Assistant determines the location;
+the display uses the entity's friendly name and provider temperature/wind units,
+not GPS or a guessed location. Current conditions accompany up to three forecast
+cards, preferring supported hourly, then daily, then twice-daily forecasts in
+Automatic mode. Explicit unsupported modes show a placeholder instead of invented
+forecast data. Forecast requests are limited to once per 15 minutes per loaded
+entry, including failures, with a ten-second deadline. Reloading the entry resets
+that timer. Clearing the source or switching weather off clears values and hides
+the shortcut; other dashboard and alert selections are preserved.
+
+Weather requires matching firmware exposing the optional **`update_weather`**
+action (17 arguments); the integration does not call it on older firmware.
+The original eight-section dashboard protocol and six rotation slots remain
+unchanged. A provider timeout does not hide available current conditions.
+Firmware remembers Weather as a main item, but restores Home if it is disabled.
+This integration adds weather configuration, **not iPhone Bluetooth support**:
+ANCS pairing/radio controls belong to the separate experimental firmware, require
+their own hardware/memory validation, and are not installed by HACS.
 
 Each additional provider card accepts optional session and weekly quota
 percentage sensors. Unavailable sensor states display as `--%` and suppress the
