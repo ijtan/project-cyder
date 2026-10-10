@@ -1,280 +1,114 @@
 # Project Cydex
 
-Project Cydex configures dashboard sensors and priority alerts for an ESPHome
-CYD display from Home Assistant.
+Home Assistant dashboards and alerts for a Cheap Yellow Display (CYD) running
+ESPHome. Choose what appears on the display from Home Assistant.
+
+![Cydex home dashboard](docs/images/dashboard.png)
+
+*Offline preview with sample data.*
+
+## Features
+
+- Power, energy and up to five named sensor readings.
+- Room controls for thermostats, lights and switches.
+- Claude usage and up to three other AI providers, using your existing sensors.
+- Weather conditions and forecasts.
+- Camera snapshots and an optional 3D printer monitor.
+- Notice, Warning and Critical alerts, with acknowledge and snooze controls.
+- Page visibility, order and automatic rotation.
 
 ## Requirements
 
-- Home Assistant 2026.10.0 or newer with HACS installed (v0.2.4's native camera
-  authentication/view path is validated against 2026.10.0).
-- CYD firmware exposing `display_alert`, `clear_alert`, `dismiss_alert`, and all
-  eight bounded dashboard actions: `update_dashboard_layout`, `_controls`,
-  `_sensors`, `_energy`, `_claude`, `_provider_1`, `_provider_2`, and `_provider_3`
-  (each name starts with `update_dashboard`). Attention routing also needs `focus_page`.
+- Home Assistant 2026.10.0 or newer.
+- [HACS](https://www.hacs.xyz/docs/use/).
+- A CYD with compatible ESPHome firmware, added to Home Assistant.
 
-The firmware is installed separately. This repository does not include ESPHome
-YAML or install firmware. Install matching CYD firmware before using the updated
-alert payload (`rule_id`, live reading, limit, and incident-clear state) or
-dashboard status colors; older action schemas may reject the new fields. For
-upgrades, keep Project Cydex disabled while installing the integration and matching
-firmware; confirm the new firmware boots and HA discovers all eight actions before
-enabling/reloading it. Version 0.2.3 deliberately refuses the legacy oversized
-`update_dashboard` action. Ordinary entity selections then stay in HA. Snapshot support
-also requires an HTTP(S) Home Assistant internal URL that the CYD can reach on
-the local network.
-
-## Current release
-
-**Version 0.2.5** adds optional, selected-source weather and three forecast cards.
-Matching weather/camera firmware was remotely compiled and installed over OTA on
-the test CYD; its new `update_weather` action and a short post-boot memory capture
-were verified. Actual weather-provider/display behavior still needs an on-device
-check after updating this integration. Bluetooth is not part of this deployment.
-
-**Version 0.2.4** fixes alert priority dropdowns after reopening saved rules,
-uses automatically detected local HA URLs, and adds a bounded colour camera
-thumbnail endpoint. Install matching `qoi_v1` firmware before updating/enabling
-camera downloads. Physical camera validation remains pending at publication.
-
-Version 0.2.3 fixes cleared options returning after Submit and makes empty
-selections authoritative. Dashboard transport now uses eight sequential actions
-with at most 21 arguments each, rather than one 126-argument request. Calls are
-paced 100 ms apart, rapid changes are coalesced, pending updates are cancelled
-on unload/disable, and a 30-second refresh resynchronizes after a disconnect.
-Failure logs contain section/error class, not payloads or camera tokens.
-
-Alert form defaults convert saved numeric
-priorities to the strings required by HA's dropdown, while stored/runtime
-priorities remain integers. Camera links resolve an automatically detected local
-HA URL when the explicit internal URL is empty. The camera path needs matching
-`qoi_v1` firmware; the integration alone cannot correct the old decoded-image budget.
-
-This is a targeted mitigation for an observed ESP32 API argument-allocation
-panic, **not an upstream-prescribed best practice or a proven on-device fix**.
-Local tests pass; physical runtime validation is still pending at publication.
-Sections apply separately: a disconnect can leave a partial dashboard until the
-next full refresh. Keep USB logs open for initial enable/reconnect testing.
-
-Version 0.2.0 adds HA-configurable dashboard pages and entities to main/daily
-energy sensors, four named power metrics, Claude used/remaining display, and
-Notice, Warning, and Critical threshold alerts. Version 0.2.1 fixes empty
-optional entity selectors in the Dashboard and usage options form. Version 0.2.2
-rebrands the integration as Project Cydex, fixes current Home Assistant Area
-Registry lookups, and adds live alert readings, acknowledge/snooze controls, and
-optional warning bands for theme-aware sensor status colors.
-
-Select climate, light, and switch entities once; Project Cydex groups them by
-Home Assistant Area, with unassigned entities collected in **Unassigned**. The
-display supports up to four Areas and five selected devices per Area. A room
-opens a compact device list: thermostats open target/mode controls, while lights
-and switches toggle directly. The optional climate entity remains available for
-the Home overview.
-
-Claude plus up to three additional AI providers (such as Codex, Gemini, or
-OpenAI) can show session and weekly usage. Providers can use sensors from any HA
-integration; credentials are not stored on the ESPHome device. Configure idle-
-aware rotation, page visibility and dock/rotation order, per-alert page routing,
-and up to five named Sensor Monitor rows, including text-valued states. A routed
-page stays visible for ten seconds after its alert clears unless the display is
-touched; then the previous page resumes.
+Firmware is installed separately; this repository contains the Home Assistant
+integration. Camera, weather and printer features need matching firmware support.
+Camera and printer images also need a local Home Assistant URL the display can
+reach.
 
 ## Install
 
-1. Install and set up [HACS](https://www.hacs.xyz/docs/use/) if it is not
-   already installed.
-2. Open Project Cydex in HACS with this button:
+1. Open Project Cydex in HACS using the button below.
+2. Download it and restart Home Assistant.
+3. Add **Project Cydex** under **Settings > Devices & services** and select your
+   ESPHome display.
 
 [![Open Project Cydex in HACS](https://my.home-assistant.io/badges/hacs_repository.svg)](https://my.home-assistant.io/redirect/hacs_repository/?owner=ijtan&repository=project-cyder&category=integration)
 
-   This link opens the custom repository in HACS, so you do not need to add it
-   manually first. If adding it manually, use `ijtan/project-cyder` and the
-   **Integration** category.
-3. Download Project Cydex in HACS and restart Home Assistant.
-4. Install CYD firmware exposing the required actions.
-
-After installation, use this button to start setup in Home Assistant:
+The button opens the custom repository directly in HACS. To add it manually, use
+`ijtan/project-cyder` and choose **Integration**.
 
 [![Add Project Cydex to Home Assistant](https://my.home-assistant.io/badges/config_flow_start.svg)](https://my.home-assistant.io/redirect/config_flow_start?domain=cyd_ha_monitor)
 
-You can also add **Project Cydex** from **Settings > Devices & services**.
-Select the ESPHome display, then open its options.
+## Configure
 
-In **Dashboard and usage**, choose the main power and daily energy sensors,
-selected room climate/light/switch entities, an optional climate entity for the
-Home overview, optional named power metrics, and up to five named entities for
-the Sensor Monitor page. Room controls use Home Assistant Areas automatically;
-configuration rejects more than four Areas or five selected controls in one
-Area. Sensor rows support numeric and textual
-states, include their HA units, and omit unselected rows. Configure Claude and
-additional provider quota entities. Toggle the AI, Climate, Sensors, and Energy
-pages to remove them from the dock and rotation; Home and Display Settings remain
-available. Set the six page-order slots to arrange both the dock and rotation
-cycle; Camera remains a header shortcut. Disabled pages are skipped and the
-remaining dock tabs expand to fill the space. Automatic rotation can be turned
-off or set to wait 10–120 seconds while the display is idle. Temperature and HVAC controls
-are sent to the selected entity using its supported modes, bounds, step size,
-and Celsius/Fahrenheit unit. Main power is converted to kW, daily energy to kWh,
-and additional power metrics to W when their HA units are recognized. Choose
-whether extra Claude usage shows credits used or remaining. Remaining is the
-configured limit minus used credits.
+Open **Configure** on the Project Cydex integration.
 
-Clear an optional source with **×**, then **Submit** to remove it. Saved selections
-are suggestions, not defaults that can restore removed entities. Each dashboard
-snapshot is authoritative: unassigned sources send placeholders/disabled rows,
-not old readings or firmware-selected sensors. Removing the main power source
-clears its reading and hides the graph; a separately assigned daily-energy source
-continues to display. Matching extension-owned firmware also starts unassigned
-and contains no native HA sensor fallback subscriptions.
+- **Dashboard and usage:** choose sensors, room controls, AI usage and a camera.
+  Set which pages appear, their order and the rotation interval. Room controls
+  follow Home Assistant Areas, with up to four Areas and five devices per Area.
+- **Weather and forecast:** select a weather entity. Its provider supplies the
+  location and units. Matching firmware lets you switch between hourly and daily
+  forecasts when both are available.
+- **3D printer monitor:** choose a Bambu Lab printer from its Home Assistant
+  integration, or map entities yourself. Choose when the monitor appears and
+  which images it uses. It shows readings; it does not control the printer.
+- **Alert rules:** select a numeric sensor, limit and priority. Add a warning
+  threshold or choose a page to open when the alert appears.
 
-For snapshots, select an optional Camera entity, enable its page, and choose a
-10–120 second refresh interval. Camera is an optional sixth rotation destination
-and has a small header shortcut; page-order slots determine the relative order of
-the five main dock destinations. The CYD fetches a bounded HA-generated colour
-thumbnail only while the page is selected, then releases the image buffer when leaving.
-Cydex uses HA's automatically detected internal URL when no explicit
-**Internal URL** is set; it never falls back to an external/cloud URL.
-An explicit internal URL, if set, must be reachable by the CYD. Project Cydex sends the
-camera entity's rotating, short-lived proxy token to the device in RAM; it does
-not save that token or a long-lived HA credential in options. HA decodes the source
-snapshot (including baseline/progressive JPEG or PNG), preserves its aspect ratio,
-and sends a letterboxed **128×72 QOI** thumbnail. This uses 18,432 bytes of
-decoded RGB565 pixels and a 2,048-byte streaming receive buffer on matching
-firmware, without a full compressed JPEG buffer. The endpoint inherits HA camera
-authentication and allows only cameras selected by enabled Cydex entries.
-Only one acquisition runs at a time; requests return a cached thumbnail or
-immediate 503 while a background acquisition runs. Acquisitions are throttled to
-at least ten seconds apart per camera, cached frames expire after sixty seconds, and
-caches/tasks are dropped when no entry selects them. Sources are bounded to
-4 MiB/12 million pixels; responses to the CYD are at most 36,886 bytes, decoded
-incrementally. Slow/offline cameras may still fail. This
-snapshot path is not live video, and should be hardware-tested before relying on
-it.
+Clear an optional source with **×**, then select **Submit**. Unassigned readings
+and controls are cleared or hidden.
 
-**Known camera limit on firmware `918c9f0c`:** its 256×144 RGB565 frame needs up to
-72 KiB of decoded-image RAM, exceeding observed free heap before decoder overhead.
-Use corrected `qoi_v1` firmware before installing v0.2.4 and attempting downloads.
-Matching firmware rejects old direct-JPEG links, preallocates the thumbnail only
-with at least 48 KiB free/24 KiB largest block (larger allowances for HTTPS),
-closes stalled downloads, and performs only two faster ten-second retries before
-returning to the configured refresh interval. Labels describe receipt time, not
-the camera's capture time: a served frame may already be up to sixty seconds old.
+## Alerts
 
-**Optional weather:** the separate **Weather and forecast** options
-menu selects one explicit `weather.*` source and enables a header shortcut.
-The weather provider configured in Home Assistant determines the location;
-the display uses the entity's friendly name and provider temperature/wind units,
-not GPS or a guessed location. Current conditions accompany up to three forecast
-cards, preferring supported hourly, then daily, then twice-daily forecasts in
-Automatic mode. Explicit unsupported modes show a placeholder instead of invented
-forecast data. Forecast requests are limited to once per 15 minutes per loaded
-entry, including failures, with a ten-second deadline. Reloading the entry resets
-that timer. Clearing the source or switching weather off clears values and hides
-the shortcut; other dashboard and alert selections are preserved.
+The highest-priority active alert appears first. **Ack until clear** hides it
+until the reading recovers; **Snooze 15 min** hides it temporarily. A higher-priority
+alert can still appear.
 
-Weather requires matching firmware exposing the optional **`update_weather`**
-action (17 arguments); the integration does not call it on older firmware.
-The original eight-section dashboard protocol and six rotation slots remain
-unchanged. A provider timeout does not hide available current conditions.
-Firmware remembers Weather as a main item, but restores Home if it is disabled.
-This integration adds weather configuration, **not iPhone Bluetooth support**:
-ANCS pairing/radio controls belong to the separate experimental firmware, require
-their own hardware/memory validation, and are not installed by HACS.
+Limits use the sensor's own units. Hysteresis sets how far the reading must
+recover before an alert clears. Unavailable readings do not clear active alerts.
 
-**v0.2.6 companion UI update:** firmware can optionally expose
-`update_weather_forecasts` (20 arguments) for two separate, bounded three-card
-caches. Only when this action is present does the bridge acquire both supported
-hourly/daily modes, serially, once per 15 minutes **per mode**, including failures.
-Clock/calendar switching is local on the CYD, not a new request on each tap; the
-button is hidden unless the selected provider supports both modes. Current
-17-argument firmware keeps its existing single-mode behavior and throttle.
-The matching CYD firmware (`b2141128`) enlarges the camera without increasing
-decoded-image size, removes the redundant weather title, and adds condition
-icons and a wider temperature field. Update this integration in HACS and restart
-HA to enable both caches. The toggle requires the matching firmware and a
-selected weather provider supporting both hourly and daily forecasts.
+## Camera and printer images
 
-### 3D printer monitor (v0.2.7)
+Images are small colour snapshots, refreshed every 10–120 seconds while the
+page is open. They are not live video and may be up to a minute old.
 
-Matching companion firmware (`c61c1aaa`) adds an optional `update_printer` action. Under
-**Configure → 3D printer monitor**, select **Bambu Lab printer** to choose a
-printer device from the installed `bambu_lab` integration, then review detected
-sources. AMS/spool child devices are excluded. **Custom mappings** lets you select
-individual HA entities instead. Disabled, missing or ambiguous Bambu roles are
-left empty; reselecting the same printer does not restore cleared mappings.
+The printer monitor uses the camera shortcut while visible. Switch between the
+print image and chamber view, or tap the image to enlarge it. Your normal camera
+selection is kept and returns when the printer monitor is hidden.
 
-The top-right camera slot becomes a printer shortcut while the selected condition
-matches. Your normal camera configuration remains intact and returns when the
-printer is hidden. Available readings include job/status/progress, elapsed and
-remaining time, layers, and nozzle/bed current/target temperatures. No printer
-actuation is sent. An unconfigured optional field is omitted, not replaced with
-another entity. A start timestamp gives **wall-clock elapsed including pauses**;
-use an explicit duration sensor for active-printing elapsed if available.
+Cydex uses Home Assistant's local URL automatically. If you set an **Internal
+URL** yourself, make sure the CYD can reach it. Slow or offline image sources may
+fail to load.
 
-The local render/camera button switches the one decoded thumbnail buffer, not
-between two resident images or video streams. Select a default view explicitly.
-Tap the image to enlarge it, then tap again to return to the status overview.
-The redundant image-view caption is omitted; the button labels the other view.
-There is no silent fallback when its source is missing. Bambu cover renders are
-`image.*`; chamber views may be `camera.*` or `image.*`. Both use HA's native
-rotating entity-token authentication and the existing bounded HA-side QOI
-normalizer. Printer hiding, job/source changes and unload release old work/data.
+## Screenshots
 
-For conditional visibility choose an entity and exact matching states (Bambu
-defaults: `running`, `pause`), or Always. Automations can persistently override
-visibility for a particular Cydex entry without changing its source selections:
+Offline previews from the firmware's LVGL renderer, using sample data.
 
-```yaml
-action: cyd_ha_monitor.set_printer_visibility
-data:
-  entry_id: YOUR_CYDEX_CONFIG_ENTRY_ID
-  mode: show  # auto restores the condition; hide forces it hidden
-```
+**Weather**
 
-Showing never chooses an unconfigured printer and does not automatically change
-the active page. If the printer disappears while being viewed, the device returns
-Home, leaving the ordinary camera available from the shortcut. The six rotation
-slots and remembered media navigation ID remain stable.
+![Weather conditions and hourly forecast](docs/images/weather.png)
 
-**Update to v0.2.7 in HACS and restart Home Assistant.** Development CYD firmware
-`c61c1aaa` was remotely built, budget-reviewed, installed and API-verified; v0.2.6
-does not contain printer configuration/transport. Other devices also need matching
-approved firmware. The monitor is disabled by default, and older firmware is not
-sent printer actions. Physical A1 media/zoom/stability checks remain pending.
-Custom inputs currently
-use entity states; expose an attribute through an HA template sensor if needed.
+**3D printer monitor**
 
-Each additional provider card accepts optional session and weekly quota
-percentage sensors. Unavailable sensor states display as `--%` and suppress the
-corresponding progress bar. The compact AI page shows Claude plus up to three
-configured providers at once.
+![Printer progress, temperatures and print image](docs/images/printer.png)
 
-In **Alert rules**, choose numeric entities, direction, limit, optional warning
-threshold, hysteresis, priority, title, and message. Thresholds use the sensor's
-own units. Comparisons are strict; an active rule clears after its value crosses
-the limit by the configured hysteresis. Invalid or unavailable states do not
-clear active alerts. The optional warning threshold colors a matching sensor row
-amber as it approaches the limit; breached rows stay red even after the alert is
-acknowledged. Colors adapt to the selected display theme. The highest-priority
-active rule is shown: 1 for Notice, 2 for Warning, and 3 for Critical. The first
-configured rule wins ties. Each rule may focus a related dashboard page while
-its alert is active. Once cleared, that page stays visible for 10 seconds so
-there is time to inspect it, then the previously open page returns unless the
-screen is touched. Choose “Keep current page” to leave the display where it is.
+## Updates
 
-On the alert, **Ack until clear** hides that incident until its rule recovers;
-its sensor row remains red while breached. **Snooze 15 min** hides it temporarily
-and shows it again if it is still active. A different, higher-priority alert can
-still appear while an incident is acknowledged or snoozed.
+Keep the integration and firmware compatible. When a firmware update is required:
 
-## Roadmap
+1. Disable Project Cydex in Home Assistant.
+2. Install the matching firmware and confirm the display reconnects.
+3. Update Project Cydex in HACS and restart Home Assistant.
+4. Enable Project Cydex again.
 
-- Expand attention-driven rotation beyond per-alert page focus.
-- Prototype MJPEG only after the snapshot path passes physical-device memory and
-  responsiveness tests.
-- Verify screen rendering and touch behavior on the CYD, then add screenshots.
+Older firmware using the single `update_dashboard` action is unsupported; current
+firmware needs the eight separate dashboard actions and matching alert actions.
+Bluetooth and iPhone notifications are not included in this integration.
 
-Report bugs at <https://github.com/ijtan/project-cyder/issues>.
+## Help and licence
 
-## License
-
-Project Cydex is licensed under GPL-3.0-only. See [LICENSE](LICENSE).
+[Report a bug](https://github.com/ijtan/project-cyder/issues).
+Licensed under [GPL-3.0-only](LICENSE).
